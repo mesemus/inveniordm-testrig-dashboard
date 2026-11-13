@@ -1,0 +1,17 @@
+.env
+.env.compose
+config.yaml
+.venv
+node_modules
+frontend/dist
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+*.egg-info/
+.DS_Store
+.*.log
+
+# Design notes and step specs: kept locally, not committed.
+design/

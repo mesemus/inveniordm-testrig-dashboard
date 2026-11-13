@@ -1,0 +1,46 @@
+{
+  "started_at": "2026-11-13 16:07:21 UTC",
+  "last_updated": "2026-11-13 16:20:33 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "artefact_dir": "artifacts/pkg-a",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "success",
+        "package": {
+          "reference": {"package": "pkg-a"},
+          "unpatched_reference": null
+        }
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {
+          "reference": {"package": "pkg-a"},
+          "unpatched_reference": null
+        }
+      }
+    }
+  ],
+  "repository_e2e": {
+    "artefact_dir": "artifacts/e2e",
+    "has_original_junit": false,
+    "has_patched_junit": false,
+    "original": {
+      "status": "skipped",
+      "package": {
+        "reference": {"package": "seed"},
+        "unpatched_reference": null
+      }
+    },
+    "patched": {
+      "status": "success",
+      "package": {
+        "reference": {"package": "seed"},
+        "unpatched_reference": null
+      }
+    }
+  }
+}

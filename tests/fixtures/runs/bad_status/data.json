@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-11-13 16:07:21 UTC",
+  "last_updated": "2026-11-13 16:20:33 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "artefact_dir": "artifacts/pkg-exploded",
+      "has_original_junit": false,
+      "has_patched_junit": false,
+      "original": {
+        "status": "exploded",
+        "package": {"reference": {"package": "pkg-exploded"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-exploded"}, "unpatched_reference": null}
+      }
+    }
+  ]
+}

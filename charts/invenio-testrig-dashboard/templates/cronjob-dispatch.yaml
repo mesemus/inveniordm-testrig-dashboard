@@ -1,0 +1,3 @@
+{{- /* One dispatch can take up to 15 min per target (testrig's timeout), plus 10 min slack. */}}
+{{- $deadline := .Values.dispatch.activeDeadlineSeconds | default (add 600 (mul 900 (max 1 (len (.Values.config.targets | default list))))) -}}
+{{ include "itd.cronjob" (dict "root" . "name" "dispatch" "values" .Values.dispatch "args" (list "dispatch") "deadline" $deadline) }}

@@ -1,0 +1,162 @@
+# Dependencies for local development and tests. The application itself runs either on the host
+# (`docker compose up -d` starts only Postgres + RustFS) or in containers behind the `app`
+# profile (`docker compose --profile app up`), all from the same image (see the Dockerfile).
+name: invenio-testrig-dashboard
+
+# Every application process: the same image, a different command. `image` is set explicitly so
+# the five services share one build instead of one build each. The image's ENTRYPOINT is
+# `invenio-testrig-dashboard`, so `command` holds only the subcommand and its options.
+x-app: &app
+  build: .
+  image: invenio-testrig-dashboard:dev
+  profiles: [app]
+  # .env holds the secrets (see .env.example); .env.compose overrides only the addresses that
+  # differ inside the compose network (see .env.compose.example).
+  env_file:
+    - .env
+    - .env.compose
+  environment:
+    ITD_CONFIG_FILE: /config.yaml
+  volumes:
+    - ./config.yaml:/config.yaml:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    s3-init:
+      condition: service_completed_successfully
+  restart: "no"
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: invenio_testrig_dashboard
+      POSTGRES_PASSWORD: invenio_testrig_dashboard
+      POSTGRES_DB: invenio_testrig_dashboard
+    ports:
+      - "25432:5432" # non-standard host port, see README.md "Host ports"
+    volumes:
+      - pgdata:/var/lib/postgresql # 18+ images keep data in a versioned subdir; mount the parent
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "invenio_testrig_dashboard"]
+      interval: 2s
+      retries: 30
+
+  s3:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: devaccess
+      RUSTFS_SECRET_KEY: devsecret
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_VOLUMES: "/data"
+    ports:
+      - "29000:9000" # S3 API (non-standard host port)
+      - "29001:9001" # web console (non-standard host port)
+    volumes:
+      - s3data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  s3-init:
+    # Creates the dev buckets (artifacts, backups) and the test suite's. Idempotent.
+    image: amazon/aws-cli
+    environment:
+      AWS_ACCESS_KEY_ID: devaccess
+      AWS_SECRET_ACCESS_KEY: devsecret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint:
+      - sh
+      - -c
+      - |
+        until aws --endpoint-url http://s3:9000 s3 ls; do sleep 1; done
+        aws --endpoint-url http://s3:9000 s3 mb s3://invenio-testrig-dashboard || true
+        aws --endpoint-url http://s3:9000 s3 mb s3://invenio-testrig-dashboard-test || true
+        aws --endpoint-url http://s3:9000 s3 mb s3://invenio-testrig-dashboard-db-backup || true
+        aws --endpoint-url http://s3:9000 s3 mb s3://invenio-testrig-dashboard-db-backup-test || true
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  # --- The application (docker compose --profile app ...) -------------------
+  # `app` = the long-running parts (migrate + web). The one-shot jobs are in `tools`, the scheduler
+  # in `scheduler`, so starting the UI cannot dispatch a real run as a side effect.
+  migrate:
+    # One-shot: schema migrations + target sync, the same command k8s runs as the web pod's
+    # initContainer. Safe to run repeatedly (an advisory lock serialises several pods).
+    <<: *app
+    command: migrate-and-sync
+
+  web:
+    <<: *app
+    command: web --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    # The schema must exist before the first page is served. `<<: *app`'s depends_on is
+    # replaced wholesale here, so the two dependencies are repeated.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Only the web process serves HTTP; /api/health is the one open, data-free path.
+      # busybox wget: the Alpine image has no curl.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # The anchor's `restart: "no"` is right for one-shots, not for the server.
+    restart: unless-stopped
+
+  dispatch:
+    # One-shot, own profile: `docker compose run --rm dispatch` (naming the service enables its
+    # profile). k8s runs it from a CronJob.
+    <<: *app
+    profiles: [tools]
+    command: dispatch
+
+  ingest:
+    # One-shot, own profile: `docker compose run --rm ingest` (k8s runs it every 2 minutes).
+    <<: *app
+    profiles: [tools]
+    command: ingest
+
+  backup:
+    # One-shot, own profile: `docker compose run --rm backup` (k8s runs it nightly). Needs
+    # s3_backup_bucket in config.yaml.
+    <<: *app
+    profiles: [tools]
+    command: backup
+
+  scheduler:
+    # Opt-in supercronic scheduler for a longer local/test trial: the same schedules as the
+    # chart's CronJobs, from docker/crontab. Its own profile because it dispatches REAL GitHub
+    # runs on the runner repo (a laptop left running would compete with production).
+    <<: *app
+    profiles: [scheduler]
+    # `entrypoint` replaces the image's ENTRYPOINT completely (including tini), so list tini here.
+    entrypoint: ["tini", "--", "supercronic", "-passthrough-logs", "/app/crontab"]
+    restart: unless-stopped
+    # An ingest tick finishes; a dispatch may not (it can take up to 15 minutes). A kill leaves
+    # the claimed run `lost` after `lost_after_hours`, as a killed CronJob pod does.
+    stop_grace_period: 2m
+    # The anchor's depends_on is replaced wholesale by the merge, so repeat it.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  s3data:

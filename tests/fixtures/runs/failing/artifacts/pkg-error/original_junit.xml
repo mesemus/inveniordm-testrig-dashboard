@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="2" failures="0" errors="1" skipped="0" time="1.0">
+    <testcase classname="tests.test_error" name="test_ok" time="0.1"/>
+    <testcase classname="tests.test_error" name="test_boom" time="0.2">
+      <error message="RuntimeError: import failed">ImportError: cannot import name x</error>
+    </testcase>
+  </testsuite>
+</testsuites>

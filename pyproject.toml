@@ -1,0 +1,77 @@
+[project]
+name = "invenio-testrig-dashboard"
+version = "0.2.0"
+description = "Dashboard that schedules invenio-testrig runs, stores their results and alerts maintainers."
+requires-python = ">=3.14"
+dependencies = [
+    "alembic",
+    "boto3",
+    "croniter",
+    "defusedxml",
+    "fastapi>=0.162.7",
+    "httpx2>=2.16",
+    "invenio-testrig",
+    "itsdangerous>=2.2.0",
+    "psycopg[binary]",
+    "pydantic",
+    "pydantic-settings>=2.0",
+    "pyyaml",
+    "rich",
+    "sqlalchemy>=2.1,<2.2",
+    "typer>=0.29",
+    # Plain uvicorn: uvloop/httptools/websockets are speed-ups an internal dashboard does
+    # not need (24 MB); watchfiles is only for `web --reload`, so it is a dev dependency.
+    "uvicorn>=0.54.0",
+]
+
+[tool.uv.sources]
+# testrig is a locked dependency, not downloaded per dispatch. Upgrading it is a
+# reviewed change of this line plus `uv lock`; dispatch/testrig_ref() reads the commit from the
+# installed metadata, so the local CLI and the GitHub workflow can never disagree.
+invenio-testrig = { git = "https://github.com/oarepo/invenio-testrig", rev = "db1081cfcd17df19900a13a3db201836572f96cc" }
+
+[project.scripts]
+invenio-testrig-dashboard = "invenio_testrig_dashboard.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+    "types-croniter",
+    "types-defusedxml",
+    "types-pyyaml",
+    # `web --reload` on the host watches files efficiently with it (uvicorn falls back to polling).
+    "watchfiles",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invenio_testrig_dashboard"]
+
+[tool.mypy]
+# Understands BaseSettings (fields filled from env/config), so Settings() needs no ignores.
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# Only collect tests from tests/: src/ contains a router named test_cases.py.
+testpaths = ["tests"]
+markers = ["slow: slower integration tests (still run in CI)"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use asserts and obviously fake credentials on purpose.
+"tests/*" = ["S101", "S105", "S106"]

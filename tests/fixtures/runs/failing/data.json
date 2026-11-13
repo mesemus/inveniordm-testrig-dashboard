@@ -1,0 +1,73 @@
+{
+  "started_at": "2026-11-13 16:07:21 UTC",
+  "last_updated": "2026-11-13 16:20:33 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "artefact_dir": "artifacts/pkg-two-failing",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {"reference": {"package": "pkg-two-failing"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-two-failing"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-error",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {"reference": {"package": "pkg-error"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-error"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-no-junit",
+      "has_original_junit": false,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {"reference": {"package": "pkg-no-junit"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-no-junit"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-all-pass",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {"reference": {"package": "pkg-all-pass"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-all-pass"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-flag-missing",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {"reference": {"package": "pkg-flag-missing"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-flag-missing"}, "unpatched_reference": null}
+      }
+    }
+  ]
+}

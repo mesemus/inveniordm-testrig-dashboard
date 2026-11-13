@@ -1,0 +1,11 @@
+{{- include "itd.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "itd.fullname" . }}
+  labels:
+    {{- include "itd.labels" (dict "root" . "component" "config") | nindent 4 }}
+data:
+  # The app's config file, exactly .Values.config (README "Configuration").
+  config.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}

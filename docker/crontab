@@ -1,0 +1,9 @@
+# Schedules for the optional compose `scheduler` service (supercronic). Same defaults as the
+# Helm chart's CronJobs, in UTC (the image sets no TZ). k8s ignores this file: it uses CronJobs.
+#
+# dispatch decides per target whether a run is due; this only sets how often it checks.
+*/15 * * * * invenio-testrig-dashboard dispatch
+# results within ~2 minutes of a run ending, plus the live progress of running runs.
+*/2 * * * * invenio-testrig-dashboard ingest
+# Postgres backup to s3_backup_bucket (its own bucket), as the chart's backup.schedule.
+0 3 * * * invenio-testrig-dashboard backup

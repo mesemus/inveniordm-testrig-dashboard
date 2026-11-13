@@ -1,0 +1,22 @@
+# Everything the image does not need. Docker would otherwise send ~hundreds of MB
+# (node_modules, .venv, the git history) and could copy stale build output into the build.
+.git
+.github
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+tests
+design
+*.md
+.e2e*
+# Never bake secrets or the local configuration into an image (it's pullable by name).
+.env
+.env.*
+config.yaml
+.*.log

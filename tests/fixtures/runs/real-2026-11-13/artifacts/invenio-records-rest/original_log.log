@@ -1,0 +1,40 @@
+invenio_records_rest/serializers/dc.py                           15      0   100%
+invenio_records_rest/serializers/json.py                         15      0   100%
+invenio_records_rest/serializers/jsonld.py                       32      4    88%   40-43
+invenio_records_rest/serializers/marshmallow.py                  20      0   100%
+invenio_records_rest/serializers/response.py                     27      0   100%
+invenio_records_rest/sorter.py                                   48      0   100%
+invenio_records_rest/utils.py                                    99      1    99%   163
+invenio_records_rest/views.py                                   347     15    96%   112-114, 125, 289, 294, 297, 389, 442, 482, 743, 748, 906, 949, 990
+-------------------------------------------------------------------------------------------
+TOTAL                                                          1413    131    91%
+=========================== short test summary info ============================
+FAILED tests/test_index_prefixing.py::test_index_creation - AssertionError: assert {'.plugins-ml...d-1794586296'} == {'test-inveni...d-1794586296'}
+  
+  Extra items in the left set:
+  '.plugins-ml-config'
+  
+  Full diff:
+    {
+  +     '.plugins-ml-config',
+        'test-invenio-records-rest-testrecord-1794586296',
+    }
+================= 1 failed, 318 passed, 255 warnings in 50.42s =================
+ Container docker_services_cli-opensearch-1 Stopping 
+ Container docker_services_cli-rabbitmq-1 Stopping 
+ Container docker_services_cli-postgresql-1 Stopping 
+ Container docker_services_cli-redis-1 Stopping 
+ Container docker_services_cli-redis-1 Stopped 
+ Container docker_services_cli-redis-1 Removing 
+ Container docker_services_cli-redis-1 Removed 
+ Container docker_services_cli-postgresql-1 Stopped 
+ Container docker_services_cli-postgresql-1 Removing 
+ Container docker_services_cli-postgresql-1 Removed 
+ Container docker_services_cli-opensearch-1 Stopped 
+ Container docker_services_cli-opensearch-1 Removing 
+ Container docker_services_cli-opensearch-1 Removed 
+ Container docker_services_cli-rabbitmq-1 Stopped 
+ Container docker_services_cli-rabbitmq-1 Removing 
+ Container docker_services_cli-rabbitmq-1 Removed 
+ Network docker_services_cli_default Removing 
+ Network docker_services_cli_default Removed 

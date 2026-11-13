@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-11-13 16:07:21 UTC",
+  "last_updated": "2026-11-13 16:20:33 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "has_original_junit": false,
+      "has_patched_junit": false,
+      "original": {
+        "status": "success",
+        "package": {"reference": {"package": "pkg-no-dir"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-no-dir"}, "unpatched_reference": null}
+      }
+    }
+  ]
+}

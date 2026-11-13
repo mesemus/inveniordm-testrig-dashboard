@@ -1,0 +1,47 @@
+{
+  "started_at": "2026-11-13 16:07:21 UTC",
+  "last_updated": "2026-11-13 16:20:33 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "artefact_dir": "artifacts/pkg-truncated",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "success",
+        "package": {"reference": {"package": "pkg-truncated"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-truncated"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-laughs",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "success",
+        "package": {"reference": {"package": "pkg-laughs"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-laughs"}, "unpatched_reference": null}
+      }
+    },
+    {
+      "artefact_dir": "artifacts/pkg-html",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "success",
+        "package": {"reference": {"package": "pkg-html"}, "unpatched_reference": null}
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {"reference": {"package": "pkg-html"}, "unpatched_reference": null}
+      }
+    }
+  ]
+}

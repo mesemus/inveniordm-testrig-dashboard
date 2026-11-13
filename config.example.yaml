@@ -1,0 +1,71 @@
+# Invenio Testrig Dashboard configuration.
+# Copy to config.yaml (git-ignored) or point ITD_CONFIG_FILE at this file.
+# Secrets are NOT here: they come from environment variables (see .env.example).
+
+# GitHub repository with one branch per release line ("org/repo" or "user/repo").
+seed_repository: oarepo/invenio-rdm-seed
+
+# GitHub repository where the testrig workflow runs.
+runner_repository: oarepo/invenio-testrig-dashboard-runner
+
+# The testrig version is NOT configured here: testrig is a locked dependency, pinned to a commit in
+# pyproject.toml ([tool.uv.sources]) and installed by `uv sync` / the image build. `itd dispatch`
+# reads the commit from the installed package, so the local CLI and the GitHub workflow agree.
+
+# Optional full testrig config. Leave unset to use testrig's built-in defaults (the seed
+# repository is still overridden per target). testrig does not merge partial configs, so a
+# value must be a complete testrig configuration with `github:` and `seed_repository:`.
+# It is stored on every run and shown publicly by the dashboard: NEVER put secrets here
+# (keys containing token/password/secret are rejected).
+# testrig_config:
+#   github: []
+#   seed_repository:
+#     git: oarepo/inveniordm-reference-repo@master
+
+# Branches of seed_repository that we test. Branch names must be unique.
+targets:
+  - branch: master
+    schedule: "0 1 * * *"
+  - branch: "14.x"
+    schedule: "0 2 * * *"
+    # enabled: false   # keep history, stop scheduling new runs
+
+# GitHub logins allowed to trigger manual re-runs.
+maintainers: []
+
+# Every page and API call needs a GitHub login; the web server refuses to start without
+# the OAuth secrets. false is only for local development without an OAuth app.
+require_login: true
+
+# Base URL used to build links in Discord messages.
+public_url: http://localhost:8000
+
+# Where the built SPA lives (frontend/dist by default). Set it in a container, where the
+# working directory differs from the repository root. Served with the client-side route fallback.
+# frontend_dist: /app/frontend/dist
+
+# S3 bucket for run artifacts. Tests use invenio-testrig-dashboard-test.
+s3_bucket: invenio-testrig-dashboard
+
+# Postgres backups (`invenio-testrig-dashboard backup`): their own bucket with the same
+# credentials, never the artifacts bucket above (that one presigns links for browsers).
+s3_backup_bucket: invenio-testrig-dashboard-db-backup
+
+# The backup command deletes its dumps older than this many days.
+backup_retention_days: 30
+
+# Set for RustFS / S3-compatible servers; leave unset for AWS S3.
+s3_endpoint_url: http://localhost:29000
+
+# The S3 address the *browser* uses for presigned artifact links. Defaults to
+# s3_endpoint_url. Set it when the app reaches S3 at an internal address (e.g.
+# http://s3:9000 in compose/k8s) but browsers need a public one. It must be a
+# different origin (scheme + host + port) than public_url: uploaded artifacts
+# include HTML/SVG files from testrig reports. The settings are rejected otherwise.
+# s3_public_endpoint_url: http://localhost:29000
+
+# S3 region (RustFS ignores it, boto3 still needs one).
+s3_region: us-east-1
+
+# A queued run without a matching GitHub run after this many hours becomes "lost".
+lost_after_hours: 6

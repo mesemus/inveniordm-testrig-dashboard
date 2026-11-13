@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="3" failures="2" errors="0" skipped="0" time="2.0">
+    <testcase classname="tests.test_fail" name="test_ok" time="0.1"/>
+    <testcase classname="tests.test_fail" name="test_bad_one" time="0.2">
+      <failure message="AssertionError: expected 1, got 2">assert 1 == 2</failure>
+    </testcase>
+    <testcase classname="tests.test_fail" name="test_bad_two" time="0.3">
+      <failure message="ValueError: boom">Traceback (most recent call last): ...</failure>
+    </testcase>
+    <testcase classname="tests.test_fail" name="test_fail_and_teardown_error" time="0.2">
+      <failure message="AssertionError: failed">failed</failure>
+      <error message="RuntimeError: teardown broke">teardown broke</error>
+    </testcase>
+  </testsuite>
+</testsuites>

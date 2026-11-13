@@ -1,0 +1,197 @@
+# Values for invenio-testrig-dashboard: the one deployment, on CERIT-SC kuba-cluster
+# (namespace simek-ns-itd, https://itd.mireksimek.name; devops.md §9). There is no second
+# environment, so the CERIT choices are the defaults (decided 2026-11-15). Install/upgrade:
+#
+#   helm upgrade --install itd charts/invenio-testrig-dashboard -n simek-ns-itd --set image.tag=<commit>
+#
+# No secrets here: they live in the Secret named by existingSecret (devops.md §9, "Secret").
+
+image:
+  # One image for every process (web, migrate, dispatch, ingest, backup); only the command differs.
+  repository: cerit.io/simekmiroslav/invenio-testrig-dashboard
+  # The release = pyproject.toml's version (`make bump-version` keeps this, Chart.yaml's
+  # appVersion and pyproject.toml equal; tests/test_chart.py checks it). `make image` pushes it.
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+# Pull secrets for a private registry (a list of {name: ...}). CERIT's Harbor needs none.
+imagePullSecrets: []
+
+# The name of a Secret you create by hand (required; the chart fails to render without it). The chart never creates or reads secrets.
+# Every key is passed to the app containers as an environment variable (envFrom). Keys:
+#   ITD_DATABASE_URL            postgresql://<postgres.user>:<POSTGRES_PASSWORD>@<release>-postgres:5432/<postgres.database>
+#   POSTGRES_PASSWORD           the password of the bundled Postgres (only with postgres.enabled)
+#   ITD_GITHUB_TOKEN            fine-grained PAT for the runner repo (Actions, Contents, Workflows: read/write)
+#   ITD_S3_ACCESS_KEY, ITD_S3_SECRET_KEY
+#   ITD_DISCORD_WEBHOOK_URL, ITD_DISCORD_OPS_WEBHOOK_URL   (unless alerts.enabled: false)
+#   ITD_GITHUB_OAUTH_CLIENT_ID, ITD_GITHUB_OAUTH_CLIENT_SECRET, ITD_SESSION_SECRET (>= 32 chars)
+# Required keys are also referenced one by one, so a missing key stops the pod with
+# CreateContainerConfigError instead of starting a half-configured app.
+existingSecret: invenio-testrig-dashboard
+
+# The app's config.yaml, rendered as-is into a ConfigMap (README "Configuration"). The same keys
+# as config.example.yaml; every ITD_* env variable overrides the matching key.
+# NEVER put secrets here: a ConfigMap is readable by everyone with access to the namespace.
+config:
+  seed_repository: oarepo/inveniordm-reference-repo
+  runner_repository: mesemus/itd-runner
+  targets:
+    - branch: master
+      schedule: "0 1 * * *"
+    - branch: "v14.0"
+      schedule: "0 2 * * *"
+  maintainers:
+    - mesemus
+  # Must stay true: the chart refuses to render with require_login: false.
+  require_login: true
+  # The exact browser-facing URL, with https:// (the session cookie is Secure).
+  public_url: https://itd.mireksimek.name
+  s3_bucket: invenio-testrig-dashboard
+  # Postgres backups: their own bucket (private, versioned), the same keys.
+  # Never s3_bucket: that one presigns links for browsers (the app refuses the same name).
+  s3_backup_bucket: invenio-testrig-dashboard-db-backup
+  # The backup command deletes its dumps older than this after a successful upload.
+  backup_retention_days: 30
+  # CESNET S3: already a different origin than public_url, and reachable by browsers,
+  # so no s3_public_endpoint_url.
+  s3_endpoint_url: https://s3.cl4.du.cesnet.cz
+  s3_region: us-east-1
+  lost_after_hours: 6
+
+alerts:
+  # true: the Discord webhook keys are required in existingSecret. A missing webhook would make
+  # the app treat every alert as delivered and silently lose it.
+  enabled: true
+
+# Pod and container security contexts. The defaults pass the "restricted" Pod Security Standard,
+# which CERIT enforces (devops.md §9). The image runs as 10001:10001.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# The root filesystem is read-only, so every app container gets emptyDirs at /tmp (testrig's
+# temporary directory with the runner-repo clone, ingest's downloads) and HOME (git/gh config).
+# What they hold counts against each workload's ephemeral-storage limit below.
+
+web:
+  replicas: 1
+  port: 8000
+  # The web pod also runs testrig for "Re-run now": CPU/memory/ephemeral storage
+  # for one testrig subprocess per active re-run.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 512Mi }
+    limits: { cpu: "1", memory: 1Gi, ephemeral-storage: 1Gi }
+  # A pod stopped mid re-run leaves the run queued (it becomes lost after lost_after_hours).
+  terminationGracePeriodSeconds: 60
+  service:
+    type: ClusterIP
+    port: 8000
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# The initContainer of the web Deployment: migrations + target sync, retrying the DB connection.
+migrate:
+  waitForDbSeconds: 120
+  resources:
+    requests: { cpu: 50m, memory: 128Mi, ephemeral-storage: 64Mi }
+    limits: { cpu: 500m, memory: 512Mi, ephemeral-storage: 256Mi }
+
+ingress:
+  enabled: true
+  # Written to spec.ingressClassName. CERIT also needs the class as an annotation (below):
+  # different consumers read each.
+  className: nginx-traefik
+  host: itd.mireksimek.name
+  annotations:
+    kubernetes.io/ingress.class: nginx-traefik
+    # The only issuer that works on CERIT (letsencrypt-prod "never issues" there).
+    cert-manager.io/cluster-issuer: letsencrypt-gateway
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  tls:
+    enabled: true
+    # The Secret cert-manager fills with the certificate.
+    secretName: itd-mireksimek-name-tls
+
+dispatch:
+  # true since 2026-11-15: a manual dispatch on CERIT worked end to end (enable
+  # only after a real run). false = the CronJob exists but is suspended; `kubectl create job
+  # --from=cronjob/...` still works for a manual tick.
+  enabled: true
+  # How often dispatch checks; each target's own schedule decides whether a run is due.
+  schedule: "*/15 * * * *"
+  startingDeadlineSeconds: 300
+  # Empty = targets x 900 s (one testrig dispatch can take 15 min) + 10 min.
+  activeDeadlineSeconds: ""
+  terminationGracePeriodSeconds: 60
+  resources:
+    requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 512Mi }
+    limits: { cpu: "1", memory: 1Gi, ephemeral-storage: 1Gi }
+
+ingest:
+  enabled: true
+  # Results within ~2 minutes of a run ending, plus live progress.
+  schedule: "*/2 * * * *"
+  startingDeadlineSeconds: 60
+  activeDeadlineSeconds: 1800
+  terminationGracePeriodSeconds: 30
+  successfulJobsHistoryLimit: 1
+  # Download <= 200 MB + extraction <= 1 GB; the app's own limits trigger before eviction.
+  resources:
+    requests: { cpu: 100m, memory: 512Mi, ephemeral-storage: 2Gi }
+    limits: { cpu: "1", memory: 2Gi, ephemeral-storage: 3Gi }
+
+backup:
+  # Nightly pg_dump to config.s3_backup_bucket. Needs an image with the backup command and
+  # pg_dump 18 (built after 2026-11-15); an older image fails every night (and alerts ops).
+  enabled: true
+  schedule: "0 3 * * *"
+  activeDeadlineSeconds: 3600
+  terminationGracePeriodSeconds: 30
+  # One dump in /tmp (1.4 MB for ~110k test results on 2026-11-15; grows slowly).
+  resources:
+    requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 1Gi }
+    limits: { cpu: "1", memory: 1Gi, ephemeral-storage: 3Gi }
+
+postgres:
+  # false = use an external database (ITD_DATABASE_URL in existingSecret points to it).
+  enabled: true
+  # Must match the backup's pg_dump major version (18).
+  image: postgres:18
+  user: invenio_testrig_dashboard
+  database: invenio_testrig_dashboard
+  # The official image's postgres uid/gid (Debian variant; the -alpine variant uses 70).
+  # It starts directly as this user (no root, no gosu), as restricted Pod Security requires.
+  uid: 999
+  gid: 999
+  storage:
+    size: 20Gi
+    # NFS with CERIT's offsite backups (30 days): an independent copy besides our pg_dump.
+    # If Postgres can't initialise on NFS (ownership/fsGroup), use csi-ceph-rbd-du (block).
+    # Empty = the cluster's default StorageClass.
+    className: nfs-csi-backup
+  # /dev/shm for parallel query workers (a memory emptyDir; counts against the memory limit).
+  shmSizeLimit: 256Mi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi, ephemeral-storage: 256Mi }
+    limits: { cpu: "2", memory: 2Gi, ephemeral-storage: 1Gi }
+
+networkPolicy:
+  # Ingress-only policies (egress stays open: GitHub, Discord, S3):
+  #  - web: from the ingress controller's namespace and from this release's pods;
+  #  - postgres: only from this release's app pods.
+  enabled: true
+  # Namespace labels of the ingress controller (CERIT: Traefik in kube-system).
+  ingressControllerNamespaceSelector:
+    kubernetes.io/metadata.name: kube-system

@@ -1,0 +1,7 @@
+<testsuites>
+  <testsuite name="pytest" time="1.0">
+    <testcase classname="tests.test_e2e" name="test_shared" time="0.1"/>
+    <testcase classname="tests.test_e2e" name="test_gone" time="0.1"/>
+    <testcase classname="tests.test_e2e" name="test_always" time="0.1"/>
+  </testsuite>
+</testsuites>

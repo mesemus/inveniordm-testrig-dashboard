@@ -1,0 +1,6 @@
+/* MUI's CssBaseline handles the reset; this file only sets the page background. */
+html,
+body,
+#root {
+  min-height: 100%;
+}

@@ -1,0 +1,24 @@
+invenio-testrig-dashboard {{ .Chart.AppVersion }} ({{ include "itd.image" . }}) in namespace {{ .Release.Namespace }}.
+
+Secret "{{ .Values.existingSecret }}" must hold:
+  ITD_DATABASE_URL, ITD_GITHUB_TOKEN, ITD_S3_ACCESS_KEY, ITD_S3_SECRET_KEY,
+  ITD_GITHUB_OAUTH_CLIENT_ID, ITD_GITHUB_OAUTH_CLIENT_SECRET, ITD_SESSION_SECRET
+{{- if .Values.alerts.enabled }}, ITD_DISCORD_WEBHOOK_URL, ITD_DISCORD_OPS_WEBHOOK_URL{{ end }}
+{{- if .Values.postgres.enabled }}, POSTGRES_PASSWORD
+  with ITD_DATABASE_URL = postgresql://{{ .Values.postgres.user }}:<POSTGRES_PASSWORD>@{{ include "itd.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}
+{{- end }}
+A missing key keeps the pods in CreateContainerConfigError (kubectl describe pod ...).
+
+Status:
+  kubectl -n {{ .Release.Namespace }} get pods,cronjobs -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "itd.fullname" . }}-web -c migrate
+{{- if .Values.ingress.enabled }}
+
+URL: https://{{ .Values.ingress.host }}  (OAuth callback: https://{{ .Values.ingress.host }}/api/auth/callback)
+{{- else }}
+
+No ingress: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "itd.fullname" . }}-web 8000:{{ .Values.web.service.port }}
+{{- end }}
+
+Dispatch CronJob: {{ if .Values.dispatch.enabled }}enabled{{ else }}SUSPENDED (dispatch.enabled: false){{ end }}. One manual tick:
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "itd.fullname" . }}-dispatch dispatch-manual-$(date +%s)

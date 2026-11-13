@@ -1,0 +1,1 @@
+{{ include "itd.cronjob" (dict "root" . "name" "ingest" "values" .Values.ingest "args" (list "ingest") "deadline" .Values.ingest.activeDeadlineSeconds) }}

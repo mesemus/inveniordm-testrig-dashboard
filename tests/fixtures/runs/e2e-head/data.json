@@ -1,0 +1,35 @@
+{
+  "started_at": "2026-11-13 10:00:00 UTC",
+  "last_updated": "2026-11-13 10:05:00 UTC",
+  "completed": true,
+  "python_version": "3.14",
+  "packages": [
+    {
+      "artefact_dir": "artifacts/pkg-e2e",
+      "has_original_junit": true,
+      "has_patched_junit": false,
+      "original": {
+        "status": "failed",
+        "package": {
+          "reference": {
+            "package": "pkg-e2e",
+            "branch": "master",
+            "commit": "headcommit0000000000000000000000000000000000",
+            "actual_version": "1.0.1"
+          }
+        }
+      },
+      "patched": {
+        "status": "skipped",
+        "package": {
+          "reference": {
+            "package": "pkg-e2e",
+            "branch": "master",
+            "commit": "headcommit0000000000000000000000000000000000",
+            "actual_version": "1.0.1"
+          }
+        }
+      }
+    }
+  ]
+}
