@@ -41,6 +41,27 @@ def test_the_version_is_pyprojects(settings):
     assert create_app(settings).version == __version__
 
 
+def test_a_database_outage_is_a_503_not_a_500(settings, caplog):
+    # A realistic password: the logging filter redacts it everywhere, a one-letter one too.
+    dead = settings.model_copy(
+        update={"database_url": SecretStr("postgresql://user:dead-password@127.0.0.1:1/db")}
+    )
+
+    with (
+        caplog.at_level(logging.WARNING),
+        TestClient(create_app(dead), raise_server_exceptions=False) as client,
+    ):
+        response = client.get("/api/targets")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "database unavailable"}
+    # One warning line, no traceback per request while the database is down.
+    (record,) = [
+        r for r in caplog.records if "database unavailable for /api/targets" in r.getMessage()
+    ]
+    assert record.levelno == logging.WARNING and record.exc_info is None
+
+
 def test_health_returns_503_when_the_database_is_down(settings):
     dead = settings.model_copy(
         update={"database_url": SecretStr("postgresql://u:p@127.0.0.1:1/db")}

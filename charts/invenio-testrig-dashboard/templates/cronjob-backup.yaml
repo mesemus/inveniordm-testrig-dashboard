@@ -1,4 +1,0 @@
-{{- /* backup.enabled: false renders no CronJob at all (unlike dispatch, which is suspended). */}}
-{{- if .Values.backup.enabled }}
-{{ include "itd.cronjob" (dict "root" . "name" "backup" "values" .Values.backup "args" (list "backup") "deadline" .Values.backup.activeDeadlineSeconds) }}
-{{- end }}

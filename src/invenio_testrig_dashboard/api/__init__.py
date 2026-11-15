@@ -8,11 +8,13 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import OperationalError
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import __version__
 from ..db import make_engine, make_session_factory
 from ..redact import install_logging_filter
+from ..runs import short_error
 from ..settings import ConfigError, Settings
 from ..storage import make_presign_client, make_s3_client
 from . import artifacts, auth, compare, health, reruns, runs, targets, test_cases
@@ -24,6 +26,13 @@ async def _internal_error(request: Request, exc: Exception) -> JSONResponse:
     # The logging filter redacts exception texts; clients never see a traceback.
     log.error("unhandled API error for %s", request.url.path, exc_info=exc)
     return JSONResponse({"detail": "internal error"}, status_code=500)
+
+
+async def _database_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    # A database outage is expected and temporary: a 503 (like /api/health) and one log line,
+    # not a 500 with a full traceback for every request until the database is back.
+    log.warning("database unavailable for %s: %s", request.url.path, short_error(exc))
+    return JSONResponse({"detail": "database unavailable"}, status_code=503)
 
 
 def create_app(
@@ -80,6 +89,7 @@ def create_app(
     # These routers must come before the SPA catch-all added by _add_spa.
     for module in (health, targets, runs, test_cases, compare, artifacts, auth, reruns):
         app.include_router(module.router)
+    app.add_exception_handler(OperationalError, _database_unavailable)
     app.add_exception_handler(Exception, _internal_error)
 
     dist = (

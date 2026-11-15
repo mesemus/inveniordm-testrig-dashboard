@@ -2,10 +2,8 @@ apiVersion: v2
 name: invenio-testrig-dashboard
 description: >-
   Schedules invenio-testrig runs on GitHub Actions, ingests their results, and serves the
-  dashboard (web + dispatch/ingest/backup CronJobs + its own Postgres).
+  dashboard (web + one scheduler pod running dispatch/ingest/backup + its own Postgres).
 type: application
 version: 0.1.0
 # = pyproject.toml's version = values.yaml image.tag (`make bump-version` sets all three).
-appVersion: "0.2.0"
-# CronJob spec.timeZone is GA since 1.27.
-kubeVersion: ">=1.27.0-0"
+appVersion: "0.3.0"

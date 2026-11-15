@@ -118,7 +118,7 @@ services:
 
   dispatch:
     # One-shot, own profile: `docker compose run --rm dispatch` (naming the service enables its
-    # profile). k8s runs it from a CronJob.
+    # profile). k8s runs it in the chart's scheduler pod.
     <<: *app
     profiles: [tools]
     command: dispatch
@@ -138,7 +138,7 @@ services:
 
   scheduler:
     # Opt-in supercronic scheduler for a longer local/test trial: the same schedules as the
-    # chart's CronJobs, from docker/crontab. Its own profile because it dispatches REAL GitHub
+    # chart's scheduler pod, from docker/crontab. Its own profile because it dispatches REAL GitHub
     # runs on the runner repo (a laptop left running would compete with production).
     <<: *app
     profiles: [scheduler]
@@ -146,7 +146,7 @@ services:
     entrypoint: ["tini", "--", "supercronic", "-passthrough-logs", "/app/crontab"]
     restart: unless-stopped
     # An ingest tick finishes; a dispatch may not (it can take up to 15 minutes). A kill leaves
-    # the claimed run `lost` after `lost_after_hours`, as a killed CronJob pod does.
+    # the claimed run `lost` after `lost_after_hours`, as when the chart's scheduler pod stops mid-dispatch.
     stop_grace_period: 2m
     # The anchor's depends_on is replaced wholesale by the merge, so repeat it.
     depends_on:

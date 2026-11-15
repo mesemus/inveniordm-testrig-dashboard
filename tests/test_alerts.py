@@ -279,23 +279,63 @@ def test_token_expiry_warns_only_within_fourteen_days(posts, settings, session_f
     assert "expires" in posts[0]
 
 
-def test_ops_alert_posts_without_dedupe_when_the_db_is_unreachable(monkeypatch, settings):
-    sent: list[str] = []
-    monkeypatch.setattr(
-        alerts.discord,
-        "post",
-        lambda webhook_url, content, transport=None: sent.append(content) or True,
+class _BrokenSessionFactory:
+    def __call__(self):
+        raise RuntimeError("database is down")
+
+
+def test_ops_alert_dedupes_locally_when_the_db_is_unreachable(posts, settings):
+    # A database outage makes every scheduler tick crash: one alert per window, not per tick.
+    broken = _BrokenSessionFactory()
+    for _ in range(3):
+        alerts.ops_alert(
+            broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: NOW
+        )
+    alerts.ops_alert(
+        broken, settings, "crash:dispatch", "boom", timedelta(hours=1), clock=lambda: NOW
     )
 
-    class BrokenSessionFactory:
-        def __call__(self):
-            raise RuntimeError("database is down")
+    assert len(posts) == 2  # one per key
 
-    factory = BrokenSessionFactory()
-    alerts.ops_alert(factory, settings, "crash:dispatch", "boom", timedelta(hours=1))
-    alerts.ops_alert(factory, settings, "crash:dispatch", "boom", timedelta(hours=1))
+    later = NOW + timedelta(hours=1, minutes=1)
+    alerts.ops_alert(
+        broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: later
+    )
+    assert len(posts) == 3  # the window passed
 
-    assert len(sent) == 2
+
+def test_ops_alert_still_posts_when_the_local_record_is_unusable(
+    posts, settings, tmp_path, monkeypatch
+):
+    # The fallback must never cost an alert: an unwritable or garbled file means "post".
+    monkeypatch.setattr(alerts, "LOCAL_DEDUPE_FILE", tmp_path / "missing-dir" / "alerts.json")
+    broken = _BrokenSessionFactory()
+    alerts.ops_alert(
+        broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: NOW
+    )
+    alerts.ops_alert(
+        broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: NOW
+    )
+    assert len(posts) == 2
+
+    garbled = tmp_path / "garbled.json"
+    garbled.write_text("{not json")
+    monkeypatch.setattr(alerts, "LOCAL_DEDUPE_FILE", garbled)
+    alerts.ops_alert(
+        broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: NOW
+    )
+    assert len(posts) == 3
+
+
+def test_a_failed_post_is_not_remembered(monkeypatch, settings):
+    monkeypatch.setattr(alerts.discord, "post", lambda webhook_url, content, transport=None: False)
+    broken = _BrokenSessionFactory()
+
+    alerts.ops_alert(
+        broken, settings, "crash:ingest", "boom", timedelta(hours=1), clock=lambda: NOW
+    )
+
+    assert alerts._local_sent_at("crash:ingest") is None  # the next tick tries again
 
 
 def test_stale_target_check(posts, make_target, make_run, session_factory, settings):

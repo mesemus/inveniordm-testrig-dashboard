@@ -11,7 +11,7 @@ image:
   repository: cerit.io/simekmiroslav/invenio-testrig-dashboard
   # The release = pyproject.toml's version (`make bump-version` keeps this, Chart.yaml's
   # appVersion and pyproject.toml equal; tests/test_chart.py checks it). `make image` pushes it.
-  tag: "0.2.0"
+  tag: "0.3.0"
   pullPolicy: IfNotPresent
 
 # Pull secrets for a private registry (a list of {name: ...}). CERIT's Harbor needs none.
@@ -124,45 +124,43 @@ ingress:
     # The Secret cert-manager fills with the certificate.
     secretName: itd-mireksimek-name-tls
 
+# The background jobs run in ONE long-running pod (the `scheduler` Deployment): supercronic runs
+# dispatch, ingest and backup on their schedules, like the compose `scheduler` service. No
+# CronJobs: an ingest every 2 minutes would leave a finished pod behind every 2 minutes. The
+# crontab is rendered from the values below into the ConfigMap (UTC). supercronic never starts
+# a job while its previous run is still going; `timeoutSeconds` stops a hung one (SIGTERM, which
+# the CLI turns into a clean exit).
+scheduler:
+  # supercronic waits for running jobs on SIGTERM; a dispatch can take up to 15 min, so a
+  # restart mid-dispatch may still cut it (the run then ends `lost`, as with a killed pod).
+  terminationGracePeriodSeconds: 120
+  # Sized for the jobs that can run at the same time: ingest (download <= 200 MB + extraction
+  # <= 1 GB in /tmp), dispatch (a runner-repo clone, testrig) and backup (one dump in /tmp).
+  resources:
+    requests: { cpu: 200m, memory: 768Mi, ephemeral-storage: 2Gi }
+    limits: { cpu: "2", memory: 3Gi, ephemeral-storage: 4Gi }
+  podAnnotations: {}
+
 dispatch:
-  # true since 2026-11-15: a manual dispatch on CERIT worked end to end (enable
-  # only after a real run). false = the CronJob exists but is suspended; `kubectl create job
-  # --from=cronjob/...` still works for a manual tick.
+  # true since 2026-11-15: a manual dispatch on CERIT worked end to end (enable only after a
+  # real run). false = not in the crontab; a manual run still works (devops.md §4).
   enabled: true
   # How often dispatch checks; each target's own schedule decides whether a run is due.
   schedule: "*/15 * * * *"
-  startingDeadlineSeconds: 300
   # Empty = targets x 900 s (one testrig dispatch can take 15 min) + 10 min.
-  activeDeadlineSeconds: ""
-  terminationGracePeriodSeconds: 60
-  resources:
-    requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 512Mi }
-    limits: { cpu: "1", memory: 1Gi, ephemeral-storage: 1Gi }
+  timeoutSeconds: ""
 
 ingest:
   enabled: true
   # Results within ~2 minutes of a run ending, plus live progress.
   schedule: "*/2 * * * *"
-  startingDeadlineSeconds: 60
-  activeDeadlineSeconds: 1800
-  terminationGracePeriodSeconds: 30
-  successfulJobsHistoryLimit: 1
-  # Download <= 200 MB + extraction <= 1 GB; the app's own limits trigger before eviction.
-  resources:
-    requests: { cpu: 100m, memory: 512Mi, ephemeral-storage: 2Gi }
-    limits: { cpu: "1", memory: 2Gi, ephemeral-storage: 3Gi }
+  timeoutSeconds: 1800
 
 backup:
-  # Nightly pg_dump to config.s3_backup_bucket. Needs an image with the backup command and
-  # pg_dump 18 (built after 2026-11-15); an older image fails every night (and alerts ops).
+  # Nightly pg_dump to config.s3_backup_bucket (needs pg_dump 18 in the image).
   enabled: true
   schedule: "0 3 * * *"
-  activeDeadlineSeconds: 3600
-  terminationGracePeriodSeconds: 30
-  # One dump in /tmp (1.4 MB for ~110k test results on 2026-11-15; grows slowly).
-  resources:
-    requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 1Gi }
-    limits: { cpu: "1", memory: 1Gi, ephemeral-storage: 3Gi }
+  timeoutSeconds: 3600
 
 postgres:
   # false = use an external database (ITD_DATABASE_URL in existingSecret points to it).

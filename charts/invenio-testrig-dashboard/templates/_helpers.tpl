@@ -128,48 +128,22 @@ volumes:
 {{- end -}}
 
 {{/*
-A CronJob running one CLI command. Call with
-(dict "root" $ "name" "ingest" "values" .Values.ingest "args" (list "ingest") "deadline" 1800).
+The scheduler's crontab (supercronic, UTC): one line per enabled job, each wrapped in busybox
+`timeout`, so a hung run can't block the job's later ticks (supercronic never overlaps a job with
+its own previous run). On timeout the CLI gets SIGTERM and exits cleanly.
 */}}
-{{- define "itd.cronjob" -}}
-{{- $root := .root -}}
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: {{ include "itd.fullname" $root }}-{{ .name }}
-  labels:
-    {{- include "itd.labels" (dict "root" $root "component" .name) | nindent 4 }}
-spec:
-  schedule: {{ .values.schedule | quote }}
-  # The CLI schedules are UTC, like the compose scheduler.
-  timeZone: Etc/UTC
-  suspend: {{ not .values.enabled }}
-  concurrencyPolicy: Forbid
-  {{- with .values.startingDeadlineSeconds }}
-  startingDeadlineSeconds: {{ . }}
-  {{- end }}
-  successfulJobsHistoryLimit: {{ .values.successfulJobsHistoryLimit | default 3 }}
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      # We report failures ourselves (ops Discord); k8s retries would duplicate the alerts.
-      backoffLimit: 0
-      activeDeadlineSeconds: {{ .deadline }}
-      template:
-        metadata:
-          labels:
-            {{- include "itd.labels" (dict "root" $root "component" .name) | nindent 12 }}
-          annotations:
-            checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
-        spec:
-          restartPolicy: Never
-          {{- include "itd.appPodCommon" $root | nindent 10 }}
-          # The CLI turns SIGTERM into a normal exit: it kills testrig and removes its temp dir.
-          terminationGracePeriodSeconds: {{ .values.terminationGracePeriodSeconds }}
-          containers:
-            - name: {{ .name }}
-              {{- include "itd.appContainerCommon" (dict "root" $root "web" false) | nindent 14 }}
-              args: {{ toJson .args }}
-              resources:
-                {{- toYaml .values.resources | nindent 16 }}
-{{- end -}}
+{{- define "itd.crontab" -}}
+{{- /* One dispatch can take up to 15 min per target (testrig's timeout), plus 10 min slack. */ -}}
+{{- $dispatchTimeout := .Values.dispatch.timeoutSeconds | default (add 600 (mul 900 (max 1 (len (.Values.config.targets | default list))))) -}}
+# Rendered by the Helm chart from values.yaml (dispatch/ingest/backup). Times are UTC.
+{{- if .Values.dispatch.enabled }}
+# dispatch decides per target whether a run is due; this only sets how often it checks.
+{{ .Values.dispatch.schedule }} timeout -s TERM {{ $dispatchTimeout }} invenio-testrig-dashboard dispatch
+{{- end }}
+{{- if .Values.ingest.enabled }}
+{{ .Values.ingest.schedule }} timeout -s TERM {{ .Values.ingest.timeoutSeconds }} invenio-testrig-dashboard ingest
+{{- end }}
+{{- if .Values.backup.enabled }}
+{{ .Values.backup.schedule }} timeout -s TERM {{ .Values.backup.timeoutSeconds }} invenio-testrig-dashboard backup
+{{- end }}
+{{ end -}}

@@ -52,13 +52,13 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-edi
 # --- 3. The runtime ------------------------------------------------------------
 FROM ${PYTHON_IMAGE} AS runtime
 
-# No ENV TZ: supercronic and the CLI schedules are UTC, like the chart's CronJobs.
+# No ENV TZ: supercronic and the CLI schedules are UTC (compose and the chart's scheduler pod).
 # - tini: the CLI is PID 1, and dispatch reaps its own children only; orphaned testrig children
 #   would stay zombies. It forwards signals, which the CLI handles.
 # - git + github-cli: testrig clones/pushes the runner repo and drives GitHub through `gh`.
 #   (Alpine's git needs no Perl; Debian's pulled in 54 MB of it.)
 # - ca-certificates: httpx2 verifies TLS against the system store, not certifi.
-# - supercronic: the optional compose scheduler; k8s uses the chart's CronJobs.
+# - supercronic: the background jobs, in compose's `scheduler` service and the chart's scheduler pod.
 # - apk upgrade: the base image's own packages lag behind the Alpine repository (zlib 1.3.2 in
 #   python:3.14-alpine3.24 when 1.4 was out, 2026-11-15); `apk add` alone never upgrades them.
 #   `make image` rebuilds this stage without the layer cache (--no-cache-filter runtime), so the
@@ -82,7 +82,7 @@ COPY --from=builder /app/.venv /app/.venv
 # The built SPA. ITD_FRONTEND_DIST is set here because the working directory is not the repo
 # root: without it, create_app finds no index.html and serves no SPA at all.
 COPY --from=frontend /src/frontend/dist /app/static
-# The compose scheduler's schedule (k8s uses the chart's CronJobs instead).
+# The compose scheduler's schedule (the chart renders its own crontab from values.yaml).
 COPY docker/crontab /app/crontab
 
 ENV PYTHONUNBUFFERED=1 \

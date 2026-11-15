@@ -57,13 +57,25 @@ def pod_specs(docs: list[dict]) -> dict[str, dict]:
     for doc in docs:
         if doc["kind"] in ("Deployment", "StatefulSet"):
             specs[doc["metadata"]["name"]] = doc["spec"]["template"]["spec"]
-        elif doc["kind"] == "CronJob":
-            specs[doc["metadata"]["name"]] = doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     return specs
+
+
+def web_deployment(docs: list[dict]) -> dict:
+    (deployment,) = [
+        d for d in by_kind(docs, "Deployment") if d["metadata"]["name"].endswith("-web")
+    ]
+    return deployment
 
 
 def containers(spec: dict) -> list[dict]:
     return spec.get("initContainers", []) + spec["containers"]
+
+
+def crontab(docs: list[dict]) -> list[str]:
+    """The scheduler's job lines (comments dropped)."""
+    (config_map,) = by_kind(docs, "ConfigMap")
+    lines = config_map["data"]["crontab"].splitlines()
+    return [line for line in lines if line.strip() and not line.startswith("#")]
 
 
 def required_keys(container: dict) -> set[str]:
@@ -86,9 +98,12 @@ def default_docs():
     return render("--set", "backup.enabled=true", "--set", "dispatch.enabled=true")
 
 
+SCHEDULER = "itd-invenio-testrig-dashboard-scheduler"
+
+
 def test_every_pod_passes_the_restricted_pod_security_standard(default_docs, deployed_docs):
-    # web, postgres, dispatch, ingest, backup.
-    for docs, count in ((default_docs, 5), (deployed_docs, 5)):
+    # web, postgres, scheduler.
+    for docs, count in ((default_docs, 3), (deployed_docs, 3)):
         specs = pod_specs(docs)
         assert len(specs) == count, specs.keys()
         for name, spec in specs.items():
@@ -138,15 +153,14 @@ def test_required_secret_keys_per_workload(default_docs):
     assert required_keys(web_container) == BASE_KEYS | DISCORD_KEYS | OAUTH_KEYS
     # The OAuth secrets are only for the web server.
     assert required_keys(migrate) == BASE_KEYS | DISCORD_KEYS
-    for job in ("dispatch", "ingest", "backup"):
-        (container,) = specs[f"itd-invenio-testrig-dashboard-{job}"]["containers"]
-        assert required_keys(container) == BASE_KEYS | DISCORD_KEYS, job
-        assert container["envFrom"] == [{"secretRef": {"name": SECRET}}]
+    (scheduler,) = specs[SCHEDULER]["containers"]
+    assert required_keys(scheduler) == BASE_KEYS | DISCORD_KEYS
+    assert scheduler["envFrom"] == [{"secretRef": {"name": SECRET}}]
 
 
 def test_alerts_disabled_drops_only_the_discord_keys():
     docs = render("--set", "alerts.enabled=false")
-    (container,) = pod_specs(docs)["itd-invenio-testrig-dashboard-ingest"]["containers"]
+    (container,) = pod_specs(docs)[SCHEDULER]["containers"]
     assert required_keys(container) == BASE_KEYS
 
 
@@ -159,14 +173,14 @@ def test_the_config_map_is_the_config_values(deployed_docs):
 
 def test_config_changes_restart_the_web_pods():
     def checksum(*args: str) -> str:
-        (deployment,) = by_kind(render(*args), "Deployment")
+        deployment = web_deployment(render(*args))
         return deployment["spec"]["template"]["metadata"]["annotations"]["checksum/config"]
 
     assert checksum() != checksum("--set", "config.lost_after_hours=7")
 
 
 def test_the_web_container_and_its_probes(default_docs):
-    (deployment,) = by_kind(default_docs, "Deployment")
+    deployment = web_deployment(default_docs)
     spec = deployment["spec"]["template"]["spec"]
     (web,) = spec["containers"]
     (migrate,) = spec["initContainers"]
@@ -179,68 +193,67 @@ def test_the_web_container_and_its_probes(default_docs):
     assert spec["enableServiceLinks"] is False
 
 
-def test_cronjobs(default_docs):
-    jobs = {
-        job["metadata"]["name"].rsplit("-", 1)[1]: job["spec"]
-        for job in by_kind(default_docs, "CronJob")
-    }
-    assert jobs.keys() == {"dispatch", "ingest", "backup"}
-    for name, job in jobs.items():
-        assert job["concurrencyPolicy"] == "Forbid", name
-        assert job["timeZone"] == "Etc/UTC", name
-        assert job["jobTemplate"]["spec"]["backoffLimit"] == 0, name
-        (container,) = job["jobTemplate"]["spec"]["template"]["spec"]["containers"]
-        assert container["args"] == [name], name
-    # Dispatch is on since the manual dispatch on CERIT worked (2026-11-15); ingest runs.
-    assert jobs["dispatch"]["suspend"] is False
-    assert jobs["ingest"]["suspend"] is False
-    assert jobs["ingest"]["schedule"] == "*/2 * * * *"
-    assert jobs["ingest"]["startingDeadlineSeconds"] == 60
-    assert jobs["ingest"]["successfulJobsHistoryLimit"] == 1
-
-
-def test_dispatch_disabled_keeps_a_suspended_cronjob():
-    # Suspended, not absent: `kubectl create job --from=cronjob/...` still works for a manual tick.
-    (dispatch,) = [
-        job
-        for job in by_kind(render("--set", "dispatch.enabled=false"), "CronJob")
-        if job["metadata"]["name"].endswith("-dispatch")
+def test_no_cronjobs_one_scheduler_pod(deployed_docs):
+    # An ingest every 2 minutes as a CronJob left a finished pod behind every 2 minutes.
+    assert by_kind(deployed_docs, "CronJob") == []
+    (deployment,) = [
+        d for d in by_kind(deployed_docs, "Deployment") if d["metadata"]["name"] == SCHEDULER
     ]
-    assert dispatch["spec"]["suspend"] is True
-
-
-def test_dispatch_deadline_grows_with_the_targets(deployed_docs):
-    (dispatch,) = [
-        job
-        for job in by_kind(deployed_docs, "CronJob")
-        if job["metadata"]["name"].endswith("-dispatch")
+    spec = deployment["spec"]
+    assert spec["replicas"] == 1
+    assert spec["strategy"] == {"type": "Recreate"}  # never two schedulers during an upgrade
+    pod = spec["template"]["spec"]
+    (container,) = pod["containers"]
+    # tini reaps testrig's orphans; supercronic replaces the image's ENTRYPOINT entirely.
+    assert container["command"] == [
+        "tini",
+        "--",
+        "supercronic",
+        "-passthrough-logs",
+        "/etc/invenio-testrig-dashboard/crontab",
     ]
-    # 2 targets x 900 s + 10 min.
-    assert dispatch["spec"]["jobTemplate"]["spec"]["activeDeadlineSeconds"] == 2 * 900 + 600
+    mounts = {m["mountPath"]: m for m in container["volumeMounts"]}
+    assert mounts["/etc/invenio-testrig-dashboard/crontab"]["subPath"] == "crontab"
+    # Jobs never start on an old schema: the same migrate initContainer as the web pod.
+    (migrate,) = pod["initContainers"]
+    assert migrate["args"] == ["migrate-and-sync", "--wait-for-db", "120"]
+    assert "checksum/config" in spec["template"]["metadata"]["annotations"]
 
 
-def test_the_nightly_backup(deployed_docs):
-    (backup,) = [
-        job["spec"]
-        for job in by_kind(deployed_docs, "CronJob")
-        if job["metadata"]["name"].endswith("-backup")
+def test_the_crontab(deployed_docs):
+    # 2 targets x 900 s + 10 min for dispatch; every job stopped by `timeout` if it hangs.
+    assert crontab(deployed_docs) == [
+        "*/15 * * * * timeout -s TERM 2400 invenio-testrig-dashboard dispatch",
+        "*/2 * * * * timeout -s TERM 1800 invenio-testrig-dashboard ingest",
+        "0 3 * * * timeout -s TERM 3600 invenio-testrig-dashboard backup",
     ]
-    assert backup["schedule"] == "0 3 * * *"
-    assert backup["suspend"] is False
+
+
+@pytest.mark.parametrize("job", ["dispatch", "ingest", "backup"])
+def test_a_disabled_job_leaves_the_crontab(job):
+    lines = crontab(render("--set", f"{job}.enabled=false"))
+    assert len(lines) == 2
+    assert not any(line.endswith(f" {job}") for line in lines)
+
+
+def test_no_jobs_no_scheduler_pod():
+    docs = render(
+        *(
+            arg
+            for job in ("dispatch", "ingest", "backup")
+            for arg in ("--set", f"{job}.enabled=false")
+        )
+    )
+    assert SCHEDULER not in {d["metadata"]["name"] for d in by_kind(docs, "Deployment")}
+
+
+def test_the_backup_settings(deployed_docs):
     (config_map,) = by_kind(deployed_docs, "ConfigMap")
     config = yaml.safe_load(config_map["data"]["config.yaml"])
     # Its own bucket, never the artifacts one.
     assert config["s3_backup_bucket"] == "invenio-testrig-dashboard-db-backup"
     assert config["s3_backup_bucket"] != config["s3_bucket"]
     assert config["backup_retention_days"] == 30
-
-
-def test_backup_disabled_renders_no_cronjob():
-    names = {
-        job["metadata"]["name"]
-        for job in by_kind(render("--set", "backup.enabled=false"), "CronJob")
-    }
-    assert not any(name.endswith("-backup") for name in names)
 
 
 def test_postgres(default_docs):
@@ -276,8 +289,6 @@ def test_postgres_only_accepts_the_app_pods(default_docs):
     for doc in default_docs:
         if doc["kind"] in ("Deployment", "StatefulSet"):
             pod_labels = doc["spec"]["template"]["metadata"]["labels"]
-        elif doc["kind"] == "CronJob":
-            pod_labels = doc["spec"]["jobTemplate"]["spec"]["template"]["metadata"]["labels"]
         else:
             continue
         is_app = pod_labels.get("invenio-testrig-dashboard/app") == "true"
@@ -295,7 +306,7 @@ def test_the_cerit_ingress(deployed_docs):
         {"hosts": ["itd.mireksimek.name"], "secretName": "itd-mireksimek-name-tls"}
     ]
     assert ingress["spec"]["rules"][0]["host"] == "itd.mireksimek.name"
-    (deployment,) = by_kind(deployed_docs, "Deployment")
+    deployment = web_deployment(deployed_docs)
     (web,) = deployment["spec"]["template"]["spec"]["containers"]
     assert web["image"].startswith("cerit.io/simekmiroslav/invenio-testrig-dashboard:")
 
@@ -322,6 +333,6 @@ def test_the_chart_releases_pyprojects_version(deployed_docs):
     values = yaml.safe_load(VALUES.read_text())
     assert chart["appVersion"] == version
     assert values["image"]["tag"] == version
-    (deployment,) = by_kind(deployed_docs, "Deployment")
+    deployment = web_deployment(deployed_docs)
     (web,) = deployment["spec"]["template"]["spec"]["containers"]
     assert web["image"].endswith(f":{version}")

@@ -1,0 +1,61 @@
+{{- if or .Values.dispatch.enabled .Values.ingest.enabled .Values.backup.enabled }}
+# The background jobs (dispatch, ingest, backup) in ONE long-running pod: supercronic runs the
+# crontab rendered into the ConfigMap, like the compose `scheduler` service. Job output goes to
+# this pod's log (`kubectl logs deploy/<release>-invenio-testrig-dashboard-scheduler`); failures
+# also post to ops Discord (the CLI's crash reporter).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "itd.fullname" . }}-scheduler
+  labels:
+    {{- include "itd.labels" (dict "root" . "component" "scheduler") | nindent 4 }}
+spec:
+  # Exactly one scheduler, and never two during an upgrade (Recreate): the advisory locks would
+  # make overlapping ticks safe, but a second scheduler only adds noise.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "itd.selectorLabels" (dict "root" . "component" "scheduler") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "itd.labels" (dict "root" . "component" "scheduler") | nindent 8 }}
+      annotations:
+        # Restart when the config or the crontab changes (subPath mounts don't update in place).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.scheduler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "itd.appPodCommon" . | nindent 6 }}
+      # supercronic stops scheduling on SIGTERM and waits for running jobs; the CLI turns its own
+      # SIGTERM into a clean exit (testrig killed, temp dir removed).
+      terminationGracePeriodSeconds: {{ .Values.scheduler.terminationGracePeriodSeconds }}
+      # The same migrations + target sync as the web pod, so no job ever runs on an old schema
+      # (both pods start together on an upgrade; the advisory lock makes the second run a no-op).
+      initContainers:
+        - name: migrate
+          {{- include "itd.appContainerCommon" (dict "root" . "web" false) | nindent 10 }}
+          args: ["migrate-and-sync", "--wait-for-db", {{ .Values.migrate.waitForDbSeconds | quote }}]
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+      containers:
+        - name: scheduler
+          {{- include "itd.appContainerCommon" (dict "root" . "web" false) | nindent 10 }}
+            - name: config
+              mountPath: /etc/invenio-testrig-dashboard/crontab
+              subPath: crontab
+              readOnly: true
+          # Replaces the image's ENTRYPOINT completely, so tini is listed here too (it reaps
+          # orphaned testrig children).
+          command:
+            - tini
+            - --
+            - supercronic
+            - -passthrough-logs
+            - /etc/invenio-testrig-dashboard/crontab
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+{{- end }}

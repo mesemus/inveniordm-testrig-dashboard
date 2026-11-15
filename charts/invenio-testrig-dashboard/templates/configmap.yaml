@@ -9,3 +9,6 @@ data:
   # The app's config file, exactly .Values.config (README "Configuration").
   config.yaml: |
     {{- toYaml .Values.config | nindent 4 }}
+  # The scheduler pod's crontab (supercronic): the background jobs.
+  crontab: |
+    {{- include "itd.crontab" . | nindent 4 }}

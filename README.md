@@ -73,7 +73,7 @@ uv run invenio-testrig github --help
 (`queued` → `running` → `completed` / `infra_error` / `lost`) and stores the results. It is safe to
 run repeatedly; each run is processed independently.
 
-In Kubernetes a **CronJob runs it every 2 minutes**, so a finished run's results appear about two minutes
+In Kubernetes the chart's **scheduler pod runs it every 2 minutes**, so a finished run's results appear about two minutes
 after it ends. With compose or bare metal, run that loop yourself:
 
 ```sh
@@ -179,7 +179,7 @@ in the dev OAuth app; Vite proxies `/api` to the backend (cookies ignore the por
 and an http browser cannot keep it, so the login looks like a silent loop back to itself (the web log warns about it).
 
 A maintainer sees **Re-run now** on the target and run pages. It creates a run and the web server dispatches it right away (the
-CronJob still picks up anything it misses); a target with an active run refuses with a 409 that links to it. The target
+scheduled dispatch still picks up anything it misses); a target with an active run refuses with a 409 that links to it. The target
 page's runs table and the run page refresh every minute while a run is active.
 
 Who may re-run is the `maintainers:` list: add your GitHub login (case-insensitive) to it in `config.yaml` (the
@@ -261,8 +261,8 @@ docker compose run --rm migrate                      # migrations + target sync 
 
 Extra arguments **replace** the service's command, so repeat the subcommand (`dispatch dispatch …`).
 
-**The scheduler (opt-in).** It runs `dispatch` and `ingest` on the same schedules as the Helm chart's
-CronJobs (`docker/crontab`, UTC). It dispatches **real GitHub runs** on the runner repo, so only start
+**The scheduler (opt-in).** It runs `dispatch`, `ingest` and `backup` on the same schedules as the
+Helm chart's scheduler pod (`docker/crontab`, UTC; both use supercronic). It dispatches **real GitHub runs** on the runner repo, so only start
 it on purpose: a laptop left running would compete with production, and nothing deduplicates that
 (each database only knows its own runs). It needs the `app` profile too, because it waits for `migrate`.
 Always pass **both** profiles, including when stopping it:
@@ -277,7 +277,7 @@ docker compose --profile app --profile scheduler down             # stop everyth
 dispatching. Every compose command that names the scheduler needs both profiles, logs included: a plain
 `docker compose logs scheduler` fails with "no such service: migrate". Plain Docker works too:
 `docker logs -f invenio-testrig-dashboard-scheduler-1`. Stopping it during a dispatch can kill testrig. That run then becomes `lost` after
-`lost_after_hours`, the same as when a CronJob pod is killed.
+`lost_after_hours`, the same as when the chart's scheduler pod is stopped mid-dispatch.
 
 **Two environment files.** `.env` holds the secrets and the *host* addresses (`localhost:25432`,
 `localhost:29000`). `.env.compose` overrides only what differs *inside* the compose network: the
@@ -315,7 +315,7 @@ image) and uploads the dump to `s3://<s3_backup_bucket>/YYYY/MM/DD/invenio-testr
 - **The password** reaches `pg_dump` through `PGPASSWORD`, never on its command line.
 
 Where it runs:
-- **Kubernetes:** the chart's `backup` CronJob runs it nightly at 03:00 UTC.
+- **Kubernetes:** the chart's scheduler pod runs it nightly at 03:00 UTC.
 - **Compose:** run `docker compose run --rm backup`, or start the `scheduler` profile, which runs the same 03:00
   schedule. `s3-init` creates the local `invenio-testrig-dashboard-db-backup` bucket. Add `s3_backup_bucket` to your
   `config.yaml` (see `config.example.yaml`).
@@ -335,16 +335,17 @@ pg_restore --clean --if-exists --no-owner --dbname=<database url> <file>.dump
 - **In Kubernetes,** stop the writers first, and restore from a pod that has `pg_restore`; the app image does:
   ```sh
   kubectl -n simek-ns-itd scale deploy/itd-invenio-testrig-dashboard-web --replicas=0
-  kubectl -n simek-ns-itd patch cronjob itd-invenio-testrig-dashboard-dispatch -p '{"spec":{"suspend":true}}'
-  kubectl -n simek-ns-itd patch cronjob itd-invenio-testrig-dashboard-ingest -p '{"spec":{"suspend":true}}'
+  kubectl -n simek-ns-itd scale deploy/itd-invenio-testrig-dashboard-scheduler --replicas=0
   ```
-  After the restore, a `helm upgrade` puts the replicas and schedules back.
+  After the restore, a `helm upgrade` puts the replicas back (devops.md §5 has the whole procedure).
 
 ## Deploying to Kubernetes (Helm)
 
 The chart is in `charts/invenio-testrig-dashboard`. It deploys:
 - the web Deployment, with `migrate-and-sync` as its initContainer, plus a Service and an optional Ingress;
-- the `dispatch` and `ingest` CronJobs (`backup` once that command exists);
+- one **scheduler** Deployment: supercronic runs `dispatch` (every 15 min), `ingest` (every 2 min) and `backup`
+  (03:00 UTC) in a single long-running pod. Its crontab is rendered from `values.yaml`, and it has the same migrate
+  initContainer as web. There are no CronJobs, which would leave a finished pod behind every 2 minutes;
 - its own Postgres 18 StatefulSet;
 - optional NetworkPolicies.
 
@@ -367,9 +368,9 @@ capabilities, and has a read-only root filesystem with `emptyDir`s at `/tmp` and
 What the chart enforces:
 - **It refuses** `config.require_login: false`, a leftover `config.testrig_ref`, and a missing `existingSecret` or
   ingress host.
-- **The dispatch CronJob runs** every 15 minutes (each target's schedule decides). `dispatch.enabled: false` suspends
-  it, and a manual tick still works:
-  `kubectl create job --from=cronjob/itd-invenio-testrig-dashboard-dispatch dispatch-manual`.
+- **Every job runs under `timeout`** (`timeoutSeconds`), and supercronic never overlaps a job with its previous run.
+  `dispatch.enabled: false` (the same for `ingest`/`backup`) drops the job from the crontab. A manual run:
+  `kubectl exec deploy/itd-invenio-testrig-dashboard-scheduler -- invenio-testrig-dashboard dispatch`.
 - **Probes:** readiness uses `/api/health`, which needs the database. Liveness only checks that the port accepts
   connections, so a database outage doesn't restart the web pods.
 

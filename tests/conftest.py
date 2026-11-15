@@ -39,6 +39,10 @@ def _isolate_environment(tmp_path, monkeypatch):
         if key.startswith("ITD_"):
             monkeypatch.delenv(key)
     monkeypatch.chdir(tmp_path)
+    # The ops alerts' local dedupe file must not be shared between tests (or with the machine).
+    from invenio_testrig_dashboard import alerts
+
+    monkeypatch.setattr(alerts, "LOCAL_DEDUPE_FILE", tmp_path / "ops-alerts.json")
 
 
 @pytest.fixture

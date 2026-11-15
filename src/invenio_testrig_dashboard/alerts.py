@@ -8,10 +8,14 @@ they import it, so that would be a cycle (``tests/test_alerts.py`` enforces this
 format exceptions themselves (``runs.short_error``) and pass text.
 """
 
+import json
 import logging
+import os
+import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import quote
 
@@ -299,6 +303,36 @@ def _webhook(secret: SecretStr | None) -> str | None:
     return secret.get_secret_value() if secret is not None else None
 
 
+# When the database can't be asked (often the very reason for the alert), the dedupe falls back
+# to this file. The scheduler pod's jobs are separate processes but share /tmp, so a database
+# outage posts one crash alert per command and window instead of one every tick.
+LOCAL_DEDUPE_FILE = Path(tempfile.gettempdir()) / "invenio-testrig-dashboard-ops-alerts.json"
+
+
+def _local_sent_at(key: str) -> datetime | None:
+    try:
+        value = json.loads(LOCAL_DEDUPE_FILE.read_text()).get(key)
+        return datetime.fromisoformat(value) if isinstance(value, str) else None
+    except OSError, ValueError, AttributeError:
+        return None
+
+
+def _remember_locally(key: str, when: datetime) -> None:
+    """Best effort; a failure here must never cost an alert."""
+    try:
+        try:
+            sent = json.loads(LOCAL_DEDUPE_FILE.read_text())
+            sent = sent if isinstance(sent, dict) else {}
+        except OSError, ValueError:
+            sent = {}
+        sent[key] = when.isoformat()
+        tmp = LOCAL_DEDUPE_FILE.with_name(f"{LOCAL_DEDUPE_FILE.name}.{os.getpid()}")
+        tmp.write_text(json.dumps(sent))
+        tmp.replace(LOCAL_DEDUPE_FILE)  # atomic: concurrent jobs never see a half-written file
+    except OSError:
+        log.warning("ops alert %s: could not record it in %s", key, LOCAL_DEDUPE_FILE)
+
+
 def ops_alert(
     session_factory: sessionmaker[Session],
     settings: Settings,
@@ -315,14 +349,19 @@ def ops_alert(
         if sent_at is not None and sent_at > now - every:
             return
     except Exception:
-        # The database may be unreachable (that is often the reason for the alert).
+        # The database may be unreachable (that is often the reason for the alert): fall back
+        # to the local record, so an outage doesn't post on every scheduler tick.
         log.exception("ops alert %s: could not check the dedupe window", key)
+        local = _local_sent_at(key)
+        if local is not None and local > now - every:
+            return
 
     content = redact(f"[ops] {text}", settings)[:MAX_MESSAGE]
     webhook = _webhook(settings.discord_ops_webhook_url) or _webhook(settings.discord_webhook_url)
     if not discord.post(webhook, content):
         return
 
+    _remember_locally(key, now)
     try:
         with session_factory() as session, session.begin():
             session.execute(

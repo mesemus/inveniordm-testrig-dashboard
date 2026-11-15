@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["reruns"])
 
 JSON_MEDIA_TYPE = "application/json"
 # One dispatch tick holds the global advisory lock for its whole duration; retry while another
-# tick has it, but give up after one CronJob interval (by then the CronJob picks the run up).
+# tick has it, but give up after one dispatch interval (by then the scheduled dispatch picks the run up).
 DISPATCH_RETRY_SECONDS = 10
 DISPATCH_RETRY_FOR = 15 * 60
 

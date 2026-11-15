@@ -23,7 +23,7 @@ spec:
         - port: http
 {{- if .Values.postgres.enabled }}
 ---
-# postgres: only the app pods (web, migrate, CronJobs) of this release.
+# postgres: only the app pods (web, scheduler, their migrate initContainers) of this release.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

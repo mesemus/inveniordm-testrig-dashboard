@@ -1,5 +1,6 @@
 # Schedules for the optional compose `scheduler` service (supercronic). Same defaults as the
-# Helm chart's CronJobs, in UTC (the image sets no TZ). k8s ignores this file: it uses CronJobs.
+# Helm chart's scheduler pod, in UTC (the image sets no TZ). The chart doesn't use this file: it
+# renders its own crontab from values.yaml (with a `timeout` per job).
 #
 # dispatch decides per target whether a run is due; this only sets how often it checks.
 */15 * * * * invenio-testrig-dashboard dispatch

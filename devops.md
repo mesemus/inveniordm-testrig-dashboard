@@ -50,7 +50,8 @@ The version in `pyproject.toml` is the one source of truth. It's the image tag, 
   kubectl -n $N rollout status deploy/itd-invenio-testrig-dashboard-web --timeout=5m
   kubectl -n $N logs deploy/itd-invenio-testrig-dashboard-web -c migrate     # Migrations: X -> Y
   curl -sS https://itd.mireksimek.name/api/health                           # {"status":"ok","version":"<version>"}
-  kubectl -n $N get cronjobs -o 'custom-columns=NAME:.metadata.name,IMAGE:.spec.jobTemplate.spec.template.spec.containers[0].image,SUSPEND:.spec.suspend'
+  kubectl -n $N rollout status deploy/itd-invenio-testrig-dashboard-scheduler --timeout=5m
+  kubectl -n $N exec deploy/itd-invenio-testrig-dashboard-scheduler -- cat /etc/invenio-testrig-dashboard/crontab
   ```
   The footer of every page shows `v<version>` too.
 - [ ] Is the rollout stuck in `Init:Error`? See [Troubleshooting](#8-troubleshooting). The old pod keeps serving until
@@ -66,8 +67,9 @@ pushes.
 ## 2. Configuration changes
 
 - **Non-secret settings** (targets, maintainers, schedules, retention): edit `config:` in `values.yaml`, commit,
-  `helm upgrade … --reset-values`. The web pod restarts by itself (config checksum). CronJobs read the config on their
-  next run. Target changes are synced by the migrate initContainer.
+  `helm upgrade … --reset-values`. The web and scheduler pods restart by themselves (config
+  checksum). Target changes are synced by the migrate initContainer. Job schedules and timeouts are the `dispatch`,
+  `ingest` and `backup` sections of `values.yaml`; the chart renders them into the scheduler's crontab.
 - **Validate locally first.** Copy the `config:` block to a file and run
   `ITD_CONFIG_FILE=<file> uv run invenio-testrig-dashboard check-config` (with `.env` for the secrets).
 - **Secrets:** update `~/.profiles/itd_s3`, then re-create the Secret in place. These are the keys the chart requires
@@ -83,7 +85,7 @@ pushes.
     --from-literal=ITD_GITHUB_OAUTH_CLIENT_ID="$ITD_GITHUB_OAUTH_CLIENT_ID" \
     --from-literal=ITD_GITHUB_OAUTH_CLIENT_SECRET="$ITD_GITHUB_OAUTH_CLIENT_SECRET" \
     --from-literal=ITD_SESSION_SECRET="$ITD_SESSION_SECRET" | kubectl apply -f -
-  kubectl -n $N rollout restart deploy/itd-invenio-testrig-dashboard-web   # env is read at pod start
+  kubectl -n $N rollout restart deploy/itd-invenio-testrig-dashboard-web deploy/itd-invenio-testrig-dashboard-scheduler   # env is read at pod start
   ```
   - `POSTGRES_PASSWORD` is only used when the database is first initialised. Changing it means `ALTER USER` in
     Postgres (§6) **and** updating both keys.
@@ -93,38 +95,49 @@ pushes.
 ## 3. Status and logs
 
 ```sh
-kubectl -n $N get pods,cronjobs,jobs                      # overview
+kubectl -n $N get pods                                    # overview: web, scheduler, postgres
 kubectl -n $N top pods --containers                       # usage (no -w; loop it with watch/while)
 kubectl -n $N describe resourcequota                      # quota used vs. hard
 kubectl -n $N logs -f deploy/itd-invenio-testrig-dashboard-web            # web
-kubectl -n $N logs job/<job-name>                                          # one CronJob run
+kubectl -n $N logs -f deploy/itd-invenio-testrig-dashboard-scheduler      # every background job's output
 kubectl -n $N get events --sort-by=.lastTimestamp | tail -20               # scheduling/pull/quota problems
 kubectl -n $N get certificate itd-mireksimek-name-tls                      # TLS READY=True
+```
+
+**The background jobs** (dispatch every 15 min, ingest every 2 min, backup at 03:00 UTC) run in one long-running pod,
+`itd-invenio-testrig-dashboard-scheduler`, under supercronic. It never overlaps a job with its own previous run, and
+each job is wrapped in `timeout`. In its log, supercronic marks each run `msg=starting`, then `msg="job succeeded"` or
+`level=error msg="error running command: …"` (with `exit status N`, or `signal: terminated` after a timeout). The job's
+own output sits in between:
+
+```sh
+kubectl -n $N logs --since=30m deploy/itd-invenio-testrig-dashboard-scheduler | grep -E 'job succeeded|error running command|Active:|Backup:|Runs:'
 ```
 
 Failures of dispatch, ingest, migrate and backup also post to the **ops Discord** channel.
 
 ## 4. Manual runs (dispatch, ingest, backup)
 
-A one-off Job from a CronJob gets exactly its image, config and Secret. Job names must be unique; the date suffix keeps
-them so. Manual jobs aren't removed by the CronJob history limits, so delete them when done.
+Run the command inside the scheduler pod. It has the same image, config and Secret as the scheduled runs, and its
+output comes straight back:
 
 ```sh
-J=backup     # or: ingest, dispatch
-kubectl -n $N create job --from=cronjob/itd-invenio-testrig-dashboard-$J $J-manual-$(date +%s)
-kubectl -n $N logs -f job/$(kubectl -n $N get jobs -o name | grep "$J-manual" | tail -1 | cut -d/ -f2)
-# tidy up: manual jobs only (scheduled ones have no "-manual-" in the name and are pruned by the CronJob)
-kubectl -n $N get jobs -o name | grep -- '-manual-' | xargs kubectl -n $N delete
+kubectl -n $N exec deploy/itd-invenio-testrig-dashboard-scheduler -- invenio-testrig-dashboard backup   # or ingest, dispatch
 ```
+
+- A manual run and a scheduled tick of the same job may overlap. That's safe: dispatch and ingest hold advisory locks
+  (the second one reports "another … is running"), and two backups just write two dumps.
+- A manual run isn't wrapped in `timeout`. `kubectl exec` without `-t` doesn't forward Ctrl-C, so the run continues
+  in the pod after you disconnect. That's useful for a long backup.
 
 - **dispatch** starts **real GitHub Actions runs** for every due target. A brand-new target is due at once. To see
   what it would do, run `kubectl -n $N exec deploy/itd-invenio-testrig-dashboard-web -c web --
   invenio-testrig-dashboard dispatch --dry-run`.
 - **One target now:** use "Re-run now" in the UI (maintainers only), or
   `kubectl -n $N exec deploy/itd-invenio-testrig-dashboard-web -c web -- invenio-testrig-dashboard dispatch <branch>`.
-- **Pause/resume scheduled dispatching:** set `dispatch.enabled: false/true` in `values.yaml` and upgrade. For a quick
-  pause until the next upgrade, use
-  `kubectl -n $N patch cronjob itd-invenio-testrig-dashboard-dispatch -p '{"spec":{"suspend":true}}'`.
+- **Pause/resume scheduled dispatching:** set `dispatch.enabled: false/true` in `values.yaml` and upgrade; the line
+  leaves or rejoins the crontab. To pause *all* background jobs until the next upgrade:
+  `kubectl -n $N scale deploy/itd-invenio-testrig-dashboard-scheduler --replicas=0`.
 - **backup** prints `Backup: s3://…/YYYY/MM/DD/…dump (size, seconds)` and `Pruned: N`. Exit 1 means no dump was stored,
   and ops Discord is alerted.
 
@@ -142,7 +155,7 @@ Dumps older than 30 days are deleted by the backup itself.
 
 ```sh
 s3 ls "$B/*" | tail                                                       # newest last; one per night
-kubectl -n $N get jobs | grep backup                                       # last runs: COMPLETIONS 1/1
+kubectl -n $N logs --since=26h deploy/itd-invenio-testrig-dashboard-scheduler | grep -E '^Backup:|^Pruned:|error running command.*backup'  # since the last restart
 ```
 
 - [ ] There's a dump from last night (UTC), and its size is in line with the previous ones.
@@ -158,7 +171,7 @@ kubectl -n $N get jobs | grep backup                                       # las
 ```sh
 # 1. stop the writers
 kubectl -n $N scale deploy/itd-invenio-testrig-dashboard-web --replicas=0
-for j in dispatch ingest backup; do kubectl -n $N patch cronjob itd-invenio-testrig-dashboard-$j -p '{"spec":{"suspend":true}}'; done
+kubectl -n $N scale deploy/itd-invenio-testrig-dashboard-scheduler --replicas=0
 # 2. copy the dump into the Postgres pod (its /tmp is a writable emptyDir) and restore
 kubectl -n $N cp <file>.dump itd-invenio-testrig-dashboard-postgres-0:/tmp/restore.dump
 kubectl -n $N exec itd-invenio-testrig-dashboard-postgres-0 -- \
@@ -182,8 +195,8 @@ kubectl -n $N exec -it itd-invenio-testrig-dashboard-postgres-0 -- psql -U inven
 
 ## 7. Periodic checklist
 
-- [ ] **Weekly:** last night's dump exists (§5), and `kubectl -n $N get cronjobs` shows recent `LAST SCHEDULE` for
-  ingest (≤ 2 min ago) and dispatch (≤ 15 min ago).
+- [ ] **Weekly:** last night's dump exists (§5), and the scheduler log (§3) shows ingest every 2 minutes and dispatch
+  every 15, with no `error running command`. The scheduler pod's `RESTARTS` is 0, or explained.
 - [ ] **Weekly:** ops Discord has no unexplained alerts.
 - [ ] **Monthly:**
   - `make image` + deploy, for the base image and Alpine security fixes;
@@ -202,9 +215,21 @@ kubectl -n $N exec -it itd-invenio-testrig-dashboard-postgres-0 -- psql -U inven
 | `Init:Error`, `database not reachable after 120 s` | Postgres isn't ready, or `ITD_DATABASE_URL` is wrong. Check `kubectl -n $N get pod itd-invenio-testrig-dashboard-postgres-0` and its logs. |
 | `CreateContainerConfigError` | A key is missing from the Secret (`kubectl -n $N describe pod <pod>`). Re-create it (§2). |
 | Pods not created, events `exceeded quota` | The namespace quota is too small (Rancher → simek-ns-itd → quota). |
-| Job pod `Error` once, then fine | Look at that job's log. The CronJob retries on its schedule (`backoffLimit: 0` by design: no duplicate alerts). |
+| `error running command` in the scheduler log | The job's own output is right above it. The next tick runs again on schedule; there are no retries, so no duplicate alerts. `signal: terminated` means it hit its `timeoutSeconds` (`values.yaml`). |
+| A job stops running entirely | Is its line in the crontab (`kubectl -n $N exec deploy/itd-invenio-testrig-dashboard-scheduler -- cat /etc/invenio-testrig-dashboard/crontab`)? A disabled job is left out. Is a previous run still going? supercronic skips a tick while the last one runs, until `timeoutSeconds`. |
 | Certificate not `READY` | `kubectl -n $N describe certificate itd-mireksimek-name-tls` and `get challenge`. Delete the Certificate to retry at once. |
 | Login loops back to GitHub | `config.public_url` must be exactly `https://itd.mireksimek.name`, and the OAuth app callback `https://itd.mireksimek.name/api/auth/callback`. |
+
+### When the database is down
+
+Nothing needs a manual restart; everything recovers when Postgres is back (tested 2026-11-15).
+
+| Part | During the outage | After |
+|---|---|---|
+| web | `/api/health` and every data call answer **503** "database unavailable" (one warning per request, no traceback). Readiness fails, so the Service stops routing to it. Liveness only checks the port, so **no restart loop**. | Serves again within seconds; connections are re-established (`pool_pre_ping`). |
+| scheduler | Each job fails and exits 1 (`error running command` in the log). supercronic keeps running. Ops Discord gets **one crash alert per command per hour** (`crash:ingest`, `crash:dispatch`), not one per tick. The dedupe falls back to a file in the pod's `/tmp` while the database can't be asked. | The next tick works. |
+| a pod (re)started during the outage | Its migrate initContainer retries for 120 s, then fails. Kubernetes retries with backoff (`Init:CrashLoopBackOff`). | It starts on the next retry. |
+| postgres itself | Its liveness probe (`pg_isready`) restarts it if it hangs. | — |
 
 ## 9. Platform reference (CERIT)
 
@@ -241,8 +266,8 @@ How the chart meets this:
 
 - **Namespace quota** (set in Rancher → `simek-ns-itd`): requests 2 CPU / 4000Mi, limits 8 CPU / 12000Mi. It comes out
   of the project quota, which can't be overbooked: lower another namespace first to raise it.
-- **The chart's peak**, with web, Postgres, ingest, dispatch and backup running, plus a second web pod during a rolling
-  update: ~0.8 CPU / 2 GiB requested, ~6 CPU / 7.5 GiB in limits.
+- **The chart's peak**, with web, Postgres and the scheduler, plus a second web pod during a rolling update: ~0.65 CPU
+  / 1.8 GiB requested, ~6 CPU / 7 GiB in limits. The scheduler is replaced, never doubled (`Recreate`).
 - **Every container needs explicit `resources`.** Without them, the LimitRange gives each one 1 CPU / 512 Mi, and that
   counts against the quota.
 - **Exceeding a limit:** too much CPU only throttles. Too much memory or ephemeral storage **evicts the pod**, which is
@@ -329,7 +354,8 @@ for that reason, so a half-configured pod never starts.
 3. **Preview:** the server-side dry run in §1.
 4. **Install:** `helm upgrade --install itd charts/invenio-testrig-dashboard -n $N --reset-values`.
 5. **Watch it come up:** PVC bound → Postgres ready → the migrate initContainer (it waits up to 120 s for the
-   database) → web ready → certificate issued:
+   database) → web ready → certificate issued. The scheduler pod runs the same migrate initContainer, so its jobs never
+   start on an old schema:
    `kubectl -n $N get pods,pvc,ingress,certificate`.
 6. **Check:**
    - `curl https://itd.mireksimek.name/api/health`;

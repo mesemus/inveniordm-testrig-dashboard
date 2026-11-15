@@ -10,7 +10,7 @@ Secret "{{ .Values.existingSecret }}" must hold:
 A missing key keeps the pods in CreateContainerConfigError (kubectl describe pod ...).
 
 Status:
-  kubectl -n {{ .Release.Namespace }} get pods,cronjobs -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "itd.fullname" . }}-web -c migrate
 {{- if .Values.ingress.enabled }}
 
@@ -20,5 +20,6 @@ URL: https://{{ .Values.ingress.host }}  (OAuth callback: https://{{ .Values.ing
 No ingress: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "itd.fullname" . }}-web 8000:{{ .Values.web.service.port }}
 {{- end }}
 
-Dispatch CronJob: {{ if .Values.dispatch.enabled }}enabled{{ else }}SUSPENDED (dispatch.enabled: false){{ end }}. One manual tick:
-  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "itd.fullname" . }}-dispatch dispatch-manual-$(date +%s)
+Background jobs (one scheduler pod, supercronic): dispatch {{ if .Values.dispatch.enabled }}on{{ else }}OFF{{ end }}, ingest {{ if .Values.ingest.enabled }}on{{ else }}OFF{{ end }}, backup {{ if .Values.backup.enabled }}on{{ else }}OFF{{ end }}.
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "itd.fullname" . }}-scheduler        # every job's output
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "itd.fullname" . }}-scheduler -- invenio-testrig-dashboard ingest   # a manual run (also dispatch, backup)
