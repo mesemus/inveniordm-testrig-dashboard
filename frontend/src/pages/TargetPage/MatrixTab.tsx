@@ -6,6 +6,7 @@ import { isNotFound } from '../../api/client'
 import { useMatrix } from '../../api/hooks'
 import { dateTimeLabel } from '../../components/format'
 import { PageError, PageLoading } from '../../components/PageState'
+import { RelativeTime } from '../../components/RelativeTime'
 import { Status } from '../../components/Status'
 import { NotFoundPage } from '../NotFoundPage/NotFoundPage'
 import { orderPackages } from './matrix'
@@ -34,6 +35,9 @@ export function MatrixTab({ branch }: { branch: string }) {
   }
 
   const packages = orderPackages(data)
+  // Newest run first: 30 columns rarely fit, and the latest results must be visible without
+  // scrolling. The API sends runs oldest -> newest; cells are indexed like `data.runs`.
+  const order = data.runs.map((_, index) => index).reverse()
   const columns = `${PACKAGE_COLUMN} repeat(${data.runs.length}, ${CELL_SIZE}px)`
 
   return (
@@ -52,18 +56,20 @@ export function MatrixTab({ branch }: { branch: string }) {
             Package
           </Typography>
         </Box>
-        {data.runs.map((run) => (
-          <Box key={run.uid} sx={{ textAlign: 'center' }}>
-            <MuiLink
-              component={RouterLink}
-              to={`/runs/${encodeURIComponent(run.uid)}`}
-              variant="caption"
-              title={dateTimeLabel(run.created_at)}
-            >
-              {dateTimeLabel(run.created_at).slice(5)}
-            </MuiLink>
-          </Box>
-        ))}
+        {order.map((index) => {
+          const run = data.runs[index]
+          return (
+            <Box key={run.uid} sx={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+              <MuiLink
+                component={RouterLink}
+                to={`/runs/${encodeURIComponent(run.uid)}`}
+                variant="caption"
+              >
+                <RelativeTime date={run.created_at} title={`${dateTimeLabel(run.created_at)} UTC`} />
+              </MuiLink>
+            </Box>
+          )
+        })}
 
         {packages.map((pkg) => (
           <Fragment key={pkg.package}>
@@ -81,7 +87,8 @@ export function MatrixTab({ branch }: { branch: string }) {
                 {pkg.package}
               </Typography>
             </Box>
-            {data.runs.map((run, index) => {
+            {order.map((index) => {
+              const run = data.runs[index]
               const status = pkg.cells[index] ?? null
               return (
                 <Box key={run.uid} sx={{ display: 'flex', justifyContent: 'center' }}>

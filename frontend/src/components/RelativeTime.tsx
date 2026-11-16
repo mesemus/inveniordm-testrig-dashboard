@@ -27,6 +27,8 @@ export interface RelativeTimeProps {
   date: string | null | undefined
   /** Injectable for tests; defaults to a clock that ticks once a minute. */
   now?: Date
+  /** The tooltip; defaults to the exact UTC time (ISO 8601). */
+  title?: string
 }
 
 function useNow(intervalMs = 60_000): Date {
@@ -39,7 +41,7 @@ function useNow(intervalMs = 60_000): Date {
 }
 
 /** "3 hours ago", with the exact UTC time as a tooltip. Ticks once a minute. */
-export function RelativeTime({ date, now }: RelativeTimeProps) {
+export function RelativeTime({ date, now, title }: RelativeTimeProps) {
   const ticking = useNow()
   const current = now ?? ticking
   if (!date) {
@@ -50,7 +52,7 @@ export function RelativeTime({ date, now }: RelativeTimeProps) {
     return <>-</>
   }
   return (
-    <Tooltip title={parsed.toISOString()}>
+    <Tooltip title={title ?? parsed.toISOString()}>
       <span>{relativeText(parsed, current)}</span>
     </Tooltip>
   )
