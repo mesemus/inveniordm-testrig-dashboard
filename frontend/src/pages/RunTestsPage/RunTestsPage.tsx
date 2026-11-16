@@ -50,7 +50,7 @@ const COLUMNS: GridColDef<TestListItem>[] = [
     ),
   },
   { field: 'package', headerName: 'Package', width: 190 },
-  { field: 'classname', headerName: 'Class', width: 200 },
+  { field: 'classname', headerName: 'Module', width: 200 },
   {
     field: 'name',
     headerName: 'Name',
