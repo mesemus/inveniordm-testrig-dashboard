@@ -17,7 +17,7 @@ const MATRIX: MatrixOut = {
   ],
   packages: [
     { package: 'pkg-a', cells: ['passed', 'failed'] },
-    { package: 'pkg-b', cells: ['failed', null] },
+    { package: 'pkg-b', cells: ['failed', 'error'] },
     { package: 'pkg-c', cells: [null, 'passed'] },
   ],
 }
@@ -38,13 +38,14 @@ describe('MatrixTab', () => {
     vi.mocked(useMatrix).mockReturnValue(queryResult(MATRIX))
   })
 
-  it('renders cells, leaves absent packages empty and sorts failures first', () => {
+  it('renders cells, leaves absent packages empty and sorts the most failures first', () => {
     const { container } = renderMatrix()
 
+    // pkg-b fails in both shown runs, pkg-a in one, pkg-c in none.
     const packageOrder = screen.getAllByText(/^pkg-/).map((element) => element.textContent)
-    expect(packageOrder).toEqual(['pkg-a', 'pkg-b', 'pkg-c'])
-    // pkg-a has two statuses, pkg-b and pkg-c one each; two cells are absent.
-    expect(container.querySelectorAll('[role="img"]')).toHaveLength(4)
+    expect(packageOrder).toEqual(['pkg-b', 'pkg-a', 'pkg-c'])
+    // Five statuses; pkg-c's first cell is absent.
+    expect(container.querySelectorAll('[role="img"]')).toHaveLength(5)
   })
 
   it('navigates to the run tests filtered to the package', async () => {
