@@ -20,10 +20,18 @@ MIGRATION_LOCK_KEY = 20261113
 ALEMBIC_SCRIPT_LOCATION = "invenio_testrig_dashboard:alembic"
 
 
+# libpq waits forever by default. A connection whose packets are dropped (not refused), e.g. to
+# a Postgres pod that is still starting, then hangs for the kernel's SYN retries (~2 min): long
+# enough to outlast wait_for_database's whole budget with a single attempt (2026-11-16).
+CONNECT_TIMEOUT_SECONDS = 10
+
+
 def make_engine(settings: Settings) -> Engine:
     # The config keeps the plain postgresql:// form (pg_dump needs it).
     url = make_url(settings.database_url.get_secret_value()).set(drivername="postgresql+psycopg")
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(
+        url, pool_pre_ping=True, connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS}
+    )
 
 
 class DatabaseUnavailable(RuntimeError):

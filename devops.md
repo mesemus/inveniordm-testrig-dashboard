@@ -212,6 +212,7 @@ kubectl -n $N exec -it itd-invenio-testrig-dashboard-postgres-0 -- psql -U inven
 | Symptom | Cause / fix |
 |---|---|
 | Web pod `Init:Error`, migrate log `unknown key(s) in …config.yaml` | The config has keys the image doesn't know. Usually an old image tag, e.g. stored values reused by an upgrade without `--reset-values`. Check `helm -n $N get values itd`, then upgrade with `--reset-values`. |
+| Pods sit in `Init:0/1` for ~2 minutes after an upgrade, then start | Before 0.3.3: every release restarted Postgres (the version label was in its pod template), and a `migrate` connection made while Postgres was starting could hang for ~2 min (no connect timeout) before Kubernetes restarted it. Both are fixed: Postgres's template no longer changes between releases, and every connection times out after 10 s and is retried. |
 | `Init:Error`, `database not reachable after 120 s` | Postgres isn't ready, or `ITD_DATABASE_URL` is wrong. Check `kubectl -n $N get pod itd-invenio-testrig-dashboard-postgres-0` and its logs. |
 | `CreateContainerConfigError` | A key is missing from the Secret (`kubectl -n $N describe pod <pod>`). Re-create it (§2). |
 | Pods not created, events `exceeded quota` | The namespace quota is too small (Rancher → simek-ns-itd → quota). |

@@ -269,6 +269,19 @@ def test_postgres(default_docs):
     assert required_keys(container) == {"POSTGRES_PASSWORD"}
 
 
+def test_a_release_does_not_restart_postgres():
+    # Any change to a StatefulSet's pod template restarts its pod. The version labels used to be
+    # in Postgres's template, so every release restarted the database (2026-11-16). Nothing in
+    # the StatefulSet may depend on the app or chart version.
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    (sts,) = by_kind(render(), "StatefulSet")
+    template = yaml.safe_dump(sts["spec"]["template"])
+    assert chart["appVersion"] not in template
+    assert f"{chart['name']}-{chart['version']}" not in template
+    labels = sts["spec"]["template"]["metadata"]["labels"]
+    assert "app.kubernetes.io/version" not in labels and "helm.sh/chart" not in labels
+
+
 def test_postgres_disabled_renders_no_database():
     docs = render("--set", "postgres.enabled=false")
     assert not by_kind(docs, "StatefulSet")

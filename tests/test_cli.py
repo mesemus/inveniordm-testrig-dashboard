@@ -619,3 +619,54 @@ def test_version_option_needs_no_config():
 
     assert result.exit_code == 0
     assert result.output.strip() == __version__
+
+
+def test_a_silent_database_cannot_stall_the_wait(settings, monkeypatch, caplog):
+    """A connection that never gets an answer must time out, so the wait retries."""
+    import logging
+    import socket
+    import threading
+    import time
+
+    from pydantic import SecretStr
+
+    from invenio_testrig_dashboard import db as db_module
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(16)  # accepts TCP, never speaks the Postgres protocol
+    port = server.getsockname()[1]
+    stop = threading.Event()
+    accepted = []
+
+    def accept_and_ignore():
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                accepted.append(server.accept()[0])
+            except OSError:
+                pass
+
+    thread = threading.Thread(target=accept_and_ignore, daemon=True)
+    thread.start()
+    monkeypatch.setattr(db_module, "CONNECT_TIMEOUT_SECONDS", 1)  # libpq rounds it up to 2 s
+    silent = settings.model_copy(
+        update={"database_url": SecretStr(f"postgresql://user:dead-password@127.0.0.1:{port}/db")}
+    )
+    engine = db_module.make_engine(silent)
+    try:
+        started = time.monotonic()
+        with caplog.at_level(logging.INFO), pytest.raises(db_module.DatabaseUnavailable):
+            db_module.wait_for_database(engine, timeout=7, interval=0.5)
+        elapsed = time.monotonic() - started
+    finally:
+        engine.dispose()
+        stop.set()
+        thread.join()
+        server.close()
+        for connection in accepted:
+            connection.close()
+
+    assert elapsed < 12  # without connect_timeout this blocks until the server goes away
+    waits = [r for r in caplog.records if r.getMessage().startswith("waiting for the database")]
+    assert len(waits) >= 2  # it really retried

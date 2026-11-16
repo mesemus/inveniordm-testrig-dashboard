@@ -14,8 +14,10 @@ spec:
       {{- include "itd.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
   template:
     metadata:
+      # Only the stable selector labels: any change to this template restarts Postgres, and the
+      # full label set carries the app version, so every release used to restart the database.
       labels:
-        {{- include "itd.labels" (dict "root" . "component" "postgres") | nindent 8 }}
+        {{- include "itd.selectorLabels" (dict "root" . "component" "postgres") | nindent 8 }}
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
