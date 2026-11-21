@@ -198,6 +198,12 @@ describe('RunTestsPage', () => {
     )
   })
 
+  it('opens the drawer from a shared ?test= link', async () => {
+    renderRoute(<RunTestsPage />, { route: `${ROUTE}?test=7`, path: '/runs/:uid/tests' })
+
+    expect(await screen.findByText('AssertionError: boom')).toBeInTheDocument()
+  })
+
   it('opens the drawer with Enter', async () => {
     const user = userEvent.setup()
     renderRoute(<RunTestsPage />, { route: ROUTE, path: '/runs/:uid/tests' })

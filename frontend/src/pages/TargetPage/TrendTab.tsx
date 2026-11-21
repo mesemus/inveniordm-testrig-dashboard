@@ -8,6 +8,12 @@ import { dateTimeLabel } from '../../components/format'
 import { PageError, PageLoading } from '../../components/PageState'
 import { NotFoundPage } from '../NotFoundPage/NotFoundPage'
 
+/**
+ * Failing counts on a symlog axis (a log scale that also has 0): one spike of 900 failing must not
+ * flatten every later run of 3 into the baseline. d3's own symlog ticks are evenly spaced, so fix them.
+ */
+const FAILING_TICKS = [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+
 export function TrendTab({ branch }: { branch: string }) {
   const { data, isLoading, error } = useTrend(branch)
 
@@ -40,6 +46,7 @@ export function TrendTab({ branch }: { branch: string }) {
       <LineChart
         height={300}
         xAxis={[{ scaleType: 'point', data: labels }]}
+        yAxis={[{ scaleType: 'symlog', tickInterval: FAILING_TICKS }]}
         series={[
           { data: failingTests, label: 'Failing tests' },
           { data: failingPackages, label: 'Failing packages' },

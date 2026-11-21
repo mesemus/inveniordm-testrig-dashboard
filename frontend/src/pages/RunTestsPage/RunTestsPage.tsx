@@ -131,8 +131,6 @@ function RunTestDrawer({
                 fontFamily: 'monospace',
                 fontSize: 12,
                 bgcolor: 'action.hover',
-                maxHeight: '50vh',
-                overflow: 'auto',
               }}
             >
               {data.message || '(no message)'}
@@ -171,7 +169,10 @@ function RunTestsContent({ uid }: { uid: string }) {
   const selectedStatuses = parseStatuses(getAll('status'))
   const [draftSearch, setDraftSearch] = useState<string | null>(null)
   const [previousUrlQ, setPreviousUrlQ] = useState(urlQ)
-  const [selectedTest, setSelectedTest] = useState<number | null>(null)
+  // The open test detail lives in the URL (?test=<test case id>), so it can be bookmarked and shared.
+  const testParam = get('test') ?? ''
+  const selectedTest = /^\d{1,15}$/.test(testParam) ? Number(testParam) : null
+  const setSelectedTest = (id: number | null) => update({ test: id === null ? null : String(id) })
 
   // React's "adjust state when props change" pattern: the URL is the source of truth, so when it
   // changes (back button, shared link) the draft is dropped. Deliberately during render, not in
