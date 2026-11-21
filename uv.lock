@@ -290,7 +290,7 @@ wheels = [
 [[package]]
 name = "invenio-testrig"
 version = "0.1.0"
-source = { git = "https://github.com/oarepo/invenio-testrig?rev=db1081cfcd17df19900a13a3db201836572f96cc#db1081cfcd17df19900a13a3db201836572f96cc" }
+source = { git = "https://github.com/oarepo/invenio-testrig?rev=master#660f5892a21afa4488aa0a171058c3cba9128d1d" }
 dependencies = [
     { name = "black" },
     { name = "click" },
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "invenio-testrig-dashboard"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -348,7 +348,7 @@ requires-dist = [
     { name = "defusedxml" },
     { name = "fastapi", specifier = ">=0.162.7" },
     { name = "httpx2", specifier = ">=2.16" },
-    { name = "invenio-testrig", git = "https://github.com/oarepo/invenio-testrig?rev=db1081cfcd17df19900a13a3db201836572f96cc" },
+    { name = "invenio-testrig", git = "https://github.com/oarepo/invenio-testrig?rev=master" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pydantic" },

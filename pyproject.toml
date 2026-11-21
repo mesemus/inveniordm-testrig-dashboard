@@ -1,6 +1,6 @@
 [project]
 name = "invenio-testrig-dashboard"
-version = "0.4.1"
+version = "0.4.2"
 description = "Dashboard that schedules invenio-testrig runs, stores their results and alerts maintainers."
 requires-python = ">=3.14"
 dependencies = [
@@ -28,7 +28,7 @@ dependencies = [
 # testrig is a locked dependency, not downloaded per dispatch. Upgrading it is a
 # reviewed change of this line plus `uv lock`; dispatch/testrig_ref() reads the commit from the
 # installed metadata, so the local CLI and the GitHub workflow can never disagree.
-invenio-testrig = { git = "https://github.com/oarepo/invenio-testrig", rev = "db1081cfcd17df19900a13a3db201836572f96cc" }
+invenio-testrig = { git = "https://github.com/oarepo/invenio-testrig", rev = "master" }
 
 [project.scripts]
 invenio-testrig-dashboard = "invenio_testrig_dashboard.cli:main"
