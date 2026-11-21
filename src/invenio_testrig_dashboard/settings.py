@@ -79,6 +79,8 @@ class Target(BaseModel):
     branch: str
     schedule: str
     enabled: bool = True
+    # Extra `invenio-testrig github` options for this target, e.g. ["--patch-mode", "pinned"].
+    testrig_args: list[str] = Field(default_factory=list)
 
     @field_validator("branch")
     @classmethod

@@ -36,6 +36,7 @@ from invenio_testrig_dashboard.dispatch import (
     TestrigResult as Result,
 )
 from invenio_testrig_dashboard.models import Run
+from invenio_testrig_dashboard.settings import Target as TargetConfig
 from invenio_testrig_dashboard.status import RunStatus, RunTrigger
 
 NOW = datetime(2026, 11, 13, 1, 5, tzinfo=UTC)
@@ -456,6 +457,25 @@ def test_command_uses_repository_override_without_custom_config(settings, tmp_pa
     assert "--non-interactive" in command
     assert "--overwrite-testrig-file" in command
     assert "--config-file" not in command
+
+
+def test_command_appends_the_targets_testrig_args(settings, tmp_path):
+    configured = settings.model_copy(
+        update={
+            "targets": [
+                TargetConfig(branch="master", schedule="0 1 * * *"),
+                TargetConfig(
+                    branch="v14.0", schedule="0 2 * * *", testrig_args=["--patch-mode", "pinned"]
+                ),
+            ]
+        }
+    )
+
+    pinned = build_testrig_command(configured, tmp_path / "testrig.yaml", "v14.0", RUN_UID)
+    default = build_testrig_command(configured, tmp_path / "testrig.yaml", "master", RUN_UID)
+
+    assert pinned[-2:] == ["--patch-mode", "pinned"]
+    assert "--patch-mode" not in default
 
 
 def test_command_uses_config_file_with_custom_config(settings, tmp_path):

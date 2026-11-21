@@ -304,6 +304,9 @@ def build_testrig_command(
         # testrig does not merge a partial config with its defaults. --repository
         # overrides the seed on top of the built-in default config instead.
         command += ["--repository", f"{settings.seed_repository}@{branch}"]
+    for target in settings.targets:
+        if target.branch == branch:
+            command += target.testrig_args
     return command
 
 

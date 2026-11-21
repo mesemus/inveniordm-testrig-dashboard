@@ -11,7 +11,7 @@ image:
   repository: cerit.io/simekmiroslav/invenio-testrig-dashboard
   # The release = pyproject.toml's version (`make bump-version` keeps this, Chart.yaml's
   # appVersion and pyproject.toml equal; tests/test_chart.py checks it). `make image` pushes it.
-  tag: "0.3.4"
+  tag: "0.4.0"
   pullPolicy: IfNotPresent
 
 # Pull secrets for a private registry (a list of {name: ...}). CERIT's Harbor needs none.
@@ -40,6 +40,8 @@ config:
       schedule: "0 1 * * *"
     - branch: "v14.0"
       schedule: "0 2 * * *"
+      # Extra `invenio-testrig github` options (see `invenio-testrig github --help`).
+      testrig_args: ["--patch-mode", "pinned"]
   maintainers:
     - mesemus
   # Must stay true: the chart refuses to render with require_login: false.

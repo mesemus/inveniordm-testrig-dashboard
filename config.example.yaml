@@ -29,6 +29,8 @@ targets:
   - branch: "14.x"
     schedule: "0 2 * * *"
     # enabled: false   # keep history, stop scheduling new runs
+    # Extra `invenio-testrig github` options for this target:
+    # testrig_args: ["--patch-mode", "pinned"]
 
 # GitHub logins allowed to trigger manual re-runs.
 maintainers: []
