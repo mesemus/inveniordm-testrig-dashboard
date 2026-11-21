@@ -8,7 +8,7 @@ import { historyBars } from './historyBars'
 const MAX_BARS = 20
 const BAR_SLOT_PX = 8
 
-/** The last 20 completed runs as bars: red = failing count, short green = passed. */
+/** The last 20 completed runs as bars: red = failing count (log scale), short green = passed. */
 export function HistorySparkline({ branch }: { branch: string }) {
   const { colorScheme } = useColorScheme()
   const { data, isLoading, isError } = useTrend(branch, MAX_BARS)
@@ -37,14 +37,14 @@ export function HistorySparkline({ branch }: { branch: string }) {
         margin={{ top: 4, bottom: 4, left: 0, right: 0 }}
         showTooltip
         showHighlight
-        yAxis={{ min: 0, max: bars.max }}
+        yAxis={{ min: 0, max: 1 }}
         xAxis={{
           scaleType: 'band',
           data: keys,
           valueFormatter: (index: number) => bars.labels[index] ?? '',
           colorMap: { type: 'ordinal', values: keys, colors: bars.colors.map(ink) },
         }}
-        // The label already says "7 failing"/"passed"; a raw 0.45 for a passing run would mislead.
+        // The label already says "7 failing"/"passed"; a raw bar height would mislead.
         valueFormatter={() => ''}
       />
     </Box>

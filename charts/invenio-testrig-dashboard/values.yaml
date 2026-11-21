@@ -11,7 +11,7 @@ image:
   repository: cerit.io/simekmiroslav/invenio-testrig-dashboard
   # The release = pyproject.toml's version (`make bump-version` keeps this, Chart.yaml's
   # appVersion and pyproject.toml equal; tests/test_chart.py checks it). `make image` pushes it.
-  tag: "0.4.0"
+  tag: "0.4.1"
   pullPolicy: IfNotPresent
 
 # Pull secrets for a private registry (a list of {name: ...}). CERIT's Harbor needs none.
