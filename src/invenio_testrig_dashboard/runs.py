@@ -32,6 +32,19 @@ class RunRef(NamedTuple):
     created_at: datetime
 
 
+def run_name(branch: str, uid: uuid.UUID) -> str:
+    """testrig's --name: the GitHub run title and the report's config_name, e.g. "master-<uid>"."""
+    return f"{branch}-{uid}"
+
+
+def is_run_name(name: object, uid: uuid.UUID) -> bool:
+    """Whether a GitHub run title / config_name belongs to the run ``uid``.
+
+    The uid alone is unique; a bare uid is the title of runs dispatched before 0.3.5.
+    """
+    return isinstance(name, str) and (name == str(uid) or name.endswith(f"-{uid}"))
+
+
 class RunUnusable(Exception):
     """This run can't produce results (missing/unsafe artifact, wrong report, vanished GitHub run).
 

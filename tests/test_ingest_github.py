@@ -193,7 +193,7 @@ def test_queued_run_is_matched_by_exact_title(
     run = make_run(dispatched_at=NOW - timedelta(minutes=5))
     listed = [
         {"id": 1, "display_title": "another-uid", "run_started_at": STARTED},
-        {"id": 2, "display_title": str(run.uid), "run_started_at": STARTED},
+        {"id": 2, "display_title": f"master-{run.uid}", "run_started_at": STARTED},
         {"id": 3, "display_title": f"prefix {run.uid}", "run_started_at": STARTED},
         {"id": 4, "display_title": "Run on testrig", "run_started_at": STARTED},
     ]

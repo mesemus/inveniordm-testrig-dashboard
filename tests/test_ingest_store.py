@@ -240,15 +240,13 @@ def copy_report_with_name(tmp_path, name):
     return report
 
 
-def test_store_run_accepts_matching_expected_name(
+def test_store_run_accepts_a_report_named_after_the_run(
     make_run, session, session_factory, s3, settings, tmp_path
 ):
     run = make_run()
-    report = copy_report_with_name(tmp_path, str(run.uid))
+    report = copy_report_with_name(tmp_path, f"master-{run.uid}")
 
-    status = store_run(
-        session_factory, s3, settings, run, report, expected_name=str(run.uid), alert=False
-    )
+    status = store_run(session_factory, s3, settings, run, report, check_name=True, alert=False)
 
     assert status is RunStatus.COMPLETED
     assert count(session, PackageResult) == 2
@@ -261,9 +259,7 @@ def test_store_run_rejects_a_report_for_another_run(
     run = make_run()
     report = copy_report_with_name(tmp_path, "someone-elses-run")
 
-    status = store_run(
-        session_factory, s3, settings, run, report, expected_name=str(run.uid), alert=False
-    )
+    status = store_run(session_factory, s3, settings, run, report, check_name=True, alert=False)
 
     assert status is RunStatus.INFRA_ERROR
     with session_factory() as db:

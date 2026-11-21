@@ -29,7 +29,7 @@ from .alerts import Clock, utc_now
 from .db import try_advisory_lock
 from .github import MAX_GH_RUN_ID
 from .models import Run, Target
-from .runs import mark_infra_error, short_error
+from .runs import mark_infra_error, run_name, short_error
 from .settings import Settings
 from .status import RunStatus, RunTrigger
 
@@ -283,7 +283,7 @@ def build_testrig_command(
         "--target",
         settings.runner_repository,
         "--name",
-        str(run_uid),
+        run_name(branch, run_uid),
         "--non-interactive",
         # The token is tied to one existing runner repository: a missing (or inaccessible)
         # repository must fail the dispatch, never make testrig create a new public one.

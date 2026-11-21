@@ -40,7 +40,7 @@ from .github import (
 from .ingest import store_run
 from .models import Run
 from .progress import progress_from_jobs
-from .runs import RunRef, RunUnusable, mark_infra_error, short_error
+from .runs import RunRef, RunUnusable, is_run_name, mark_infra_error, short_error
 from .settings import Settings
 from .status import RunStatus
 
@@ -331,7 +331,7 @@ class _Tick:
                 self.settings,
                 RunRef(run.id, run.uid, run.created_at),
                 root,
-                expected_name=str(run.uid),
+                check_name=True,
                 alert=True,
             )
         # store_run records its own infra_error (and the reason), so only count it here.
@@ -372,7 +372,7 @@ class _Tick:
 
 
 def _title_match(listed: list[dict], uid: UUID) -> dict | None:
-    """The listed GitHub run titled exactly ``uid`` (testrig's run-name), if any.
+    """The listed GitHub run whose title (testrig's run-name) is ``uid``'s run_name(), if any.
 
     Two runs can share our uid only if something dispatched twice; then follow the newest
     (GitHub run ids increase).
@@ -380,7 +380,7 @@ def _title_match(listed: list[dict], uid: UUID) -> dict | None:
     matches = [
         item
         for item in listed
-        if item.get("display_title") == str(uid)
+        if is_run_name(item.get("display_title"), uid)
         and isinstance(item.get("id"), int)
         and 0 < item["id"] <= MAX_GH_RUN_ID
     ]

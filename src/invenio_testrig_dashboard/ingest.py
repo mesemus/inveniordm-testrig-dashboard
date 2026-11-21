@@ -29,7 +29,7 @@ from . import alerts
 from .db import copy_rows
 from .models import PackageResult, Run, TestCase, TestResult, case_key
 from .parsing import InvalidResults, ParsedRun, parse_run_dir
-from .runs import RunRef, mark_infra_error, short_error
+from .runs import RunRef, is_run_name, mark_infra_error, short_error
 from .settings import Settings
 from .status import FAILING, PackageStatus, RunStatus, TestStatus
 from .storage import run_prefix, upload_dir
@@ -72,13 +72,13 @@ def store_run(
     settings: Settings,
     run: Run | RunRef,
     run_dir: str | Path,
-    expected_name: str | None = None,
+    check_name: bool = False,
     *,
     alert: bool,
 ) -> RunStatus:
     """Validate, upload, and store a run; returns its final status.
 
-    ``expected_name`` is the run uid; a report whose ``config_name`` differs belongs to
+    ``check_name``: a report whose ``config_name`` is not this run's run_name() belongs to
     another run and is rejected before anything is uploaded.
 
     ``alert`` (required, so every caller decides): post the streak digest and the run-failed
@@ -96,7 +96,7 @@ def store_run(
         log.warning("run %s: invalid results: %s", run.uid, exc)
         return RunStatus.INFRA_ERROR
 
-    if expected_name is not None and parsed.name != expected_name:
+    if check_name and not is_run_name(parsed.name, run.uid):
         mark_infra_error(
             session_factory,
             run.id,

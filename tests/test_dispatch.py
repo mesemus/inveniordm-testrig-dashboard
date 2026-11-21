@@ -36,6 +36,7 @@ from invenio_testrig_dashboard.dispatch import (
     TestrigResult as Result,
 )
 from invenio_testrig_dashboard.models import Run
+from invenio_testrig_dashboard.runs import is_run_name, run_name
 from invenio_testrig_dashboard.settings import Target as TargetConfig
 from invenio_testrig_dashboard.status import RunStatus, RunTrigger
 
@@ -453,7 +454,7 @@ def test_command_uses_repository_override_without_custom_config(settings, tmp_pa
 
     assert text.startswith("# testrig built-in defaults")
     assert command[command.index("--repository") + 1] == f"{settings.seed_repository}@master"
-    assert command[command.index("--name") + 1] == str(RUN_UID)
+    assert command[command.index("--name") + 1] == f"master-{RUN_UID}"
     assert "--non-interactive" in command
     assert "--overwrite-testrig-file" in command
     assert "--config-file" not in command
@@ -975,3 +976,13 @@ def test_command_never_lets_testrig_create_the_runner_repository(settings, tmp_p
     command = build_testrig_command(settings, tmp_path / "testrig.yaml", "master", uuid.uuid4())
 
     assert "--no-create-repository" in command
+
+
+def test_run_name_matches_only_its_own_run():
+    other = uuid.uuid4()
+
+    assert is_run_name(run_name("v14.0", RUN_UID), RUN_UID)
+    assert is_run_name(str(RUN_UID), RUN_UID)  # runs dispatched before the branch prefix
+    assert not is_run_name(run_name("v14.0", other), RUN_UID)
+    assert not is_run_name(f"prefix {RUN_UID}", RUN_UID)
+    assert not is_run_name(None, RUN_UID)
