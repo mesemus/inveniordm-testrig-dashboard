@@ -187,8 +187,6 @@ function TestCaseContent({ caseId }: { caseId: number }) {
                 fontFamily: 'monospace',
                 fontSize: 12,
                 bgcolor: 'action.hover',
-                maxHeight: '50vh',
-                overflow: 'auto',
               }}
             >
               {failure.data?.message || '(no message)'}

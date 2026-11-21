@@ -41,7 +41,8 @@ export function MatrixTab({ branch }: { branch: string }) {
   const columns = `${PACKAGE_COLUMN} repeat(${data.runs.length}, ${CELL_SIZE}px)`
 
   return (
-    <Box sx={{ overflow: 'auto', maxHeight: '70vh' }}>
+    // Scrolls sideways only (sticky package column); the page scrolls vertically.
+    <Box sx={{ overflowX: 'auto' }}>
       <Box
         sx={{
           display: 'grid',

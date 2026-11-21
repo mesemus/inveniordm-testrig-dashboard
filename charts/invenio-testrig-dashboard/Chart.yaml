@@ -6,4 +6,4 @@ description: >-
 type: application
 version: 0.1.0
 # = pyproject.toml's version = values.yaml image.tag (`make bump-version` sets all three).
-appVersion: "0.4.4"
+appVersion: "0.4.5"

@@ -1,6 +1,6 @@
 [project]
 name = "invenio-testrig-dashboard"
-version = "0.4.4"
+version = "0.4.5"
 description = "Dashboard that schedules invenio-testrig runs, stores their results and alerts maintainers."
 requires-python = ">=3.14"
 dependencies = [
